@@ -1,0 +1,839 @@
+"use client";
+
+import CodeMirror from "@uiw/react-codemirror";
+import { json as jsonLang } from "@codemirror/lang-json";
+import { yaml as yamlLang } from "@codemirror/lang-yaml";
+import { oneDark } from "@codemirror/theme-one-dark";
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+import type { ConfigFormat } from "@/lib/configApi";
+import {
+  computeChangedLineNumbers,
+  lineHighlightExtension,
+} from "@/lib/cmDiffHighlight";
+import {
+  buildConfigUrl,
+  buildDeleteConfigUrl,
+  buildDeleteVersionUrl,
+  buildVersionUrl,
+  buildVersionsUrl,
+  getConfigApiBaseUrl,
+} from "@/lib/configApi";
+
+type GetConfigResponse = {
+  config: {
+    id: string;
+    namespace: string;
+    path: string;
+    format: ConfigFormat;
+    latest_version_id?: string;
+    created_at: string;
+    updated_at: string;
+  };
+  latest: {
+    id: string;
+    version: number;
+    created_at: string;
+    created_by?: string;
+    comment?: string;
+    content_sha256?: string;
+    body_raw: string;
+    body_json?: unknown;
+  };
+};
+
+type VersionMeta = {
+  id: string;
+  version: number;
+  created_at: string;
+  created_by?: string;
+  comment?: string;
+  content_sha256?: string;
+};
+
+type GetVersionResponse = {
+  config: GetConfigResponse["config"];
+  version: {
+    id: string;
+    version: number;
+    created_at: string;
+    created_by?: string;
+    comment?: string;
+    content_sha256?: string;
+    body_raw: string;
+    body_json?: unknown;
+  };
+};
+
+export function ConfigEditor(props: {
+  baseUrl: string;
+  namespace: string;
+  path: string;
+  initial: unknown;
+}) {
+  const router = useRouter();
+  const baseUrl = props.baseUrl || getConfigApiBaseUrl();
+  const namespaceHref = `/configs/${encodeURIComponent(
+    props.namespace,
+  )}`;
+
+  const [data, setData] = useState<GetConfigResponse>(
+    props.initial as GetConfigResponse,
+  );
+  const [editorValue, setEditorValue] = useState<string>(() =>
+    prettify(data.config.format, data.latest.body_raw),
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [viewingVersion, setViewingVersion] = useState<number | null>(null);
+  const [readOnly, setReadOnly] = useState(false);
+
+  const [versions, setVersions] = useState<VersionMeta[] | null>(null);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [compareError, setCompareError] = useState<string | null>(null);
+  const [loadingCompare, setLoadingCompare] = useState(false);
+  const [savingCompareLeft, setSavingCompareLeft] = useState(false);
+  const [savingCompareRight, setSavingCompareRight] = useState(false);
+
+  const [leftVersion, setLeftVersion] = useState<number | null>(null);
+  const [rightVersion, setRightVersion] = useState<number | null>(null);
+  const [leftText, setLeftText] = useState<string>("");
+  const [rightText, setRightText] = useState<string>("");
+
+  const format = data.config.format;
+  const extensions = useMemo(() => {
+    return [format === "json" ? jsonLang() : yamlLang()];
+  }, [format]);
+
+  const versionsUrl = useMemo(() => {
+    return buildVersionsUrl({
+      baseUrl,
+      namespace: props.namespace,
+      path: props.path,
+    });
+  }, [baseUrl, props.namespace, props.path]);
+
+  const refreshVersions = async (): Promise<VersionMeta[] | null> => {
+    setLoadingVersions(true);
+    setError(null);
+    try {
+      const res = await fetch(versionsUrl, { cache: "no-store" });
+      if (!res.ok) {
+        const text = await res.text();
+        setError(`API ${res.status}: ${text || res.statusText}`);
+        return null;
+      }
+      const json = (await res.json()) as { items: VersionMeta[] };
+      setVersions(json.items);
+      return json.items;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+      return null;
+    } finally {
+      setLoadingVersions(false);
+    }
+  };
+
+  const fetchVersionBodyRaw = async (version: number): Promise<string> => {
+    const url = buildVersionUrl({
+      baseUrl,
+      namespace: props.namespace,
+      path: props.path,
+      version,
+    });
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`API ${res.status}: ${text || res.statusText}`);
+    }
+    const payload = (await res.json()) as GetVersionResponse;
+    return prettify(format, payload.version.body_raw);
+  };
+
+  const openCompare = async (right: number) => {
+    setCompareError(null);
+    setCompareOpen(true);
+    setLoadingCompare(true);
+    try {
+      const versionOptions = versions ?? (await refreshVersions()) ?? [];
+
+      const lv = data.latest.version;
+      const rv = right;
+
+      setLeftVersion(lv);
+      setRightVersion(rv);
+
+      // Ensure selectors have stable options on first open.
+      if (versions === null && versionOptions.length > 0) {
+        setVersions(versionOptions);
+      }
+
+      const [lt, rt] = await Promise.all([
+        fetchVersionBodyRaw(lv),
+        fetchVersionBodyRaw(rv),
+      ]);
+      setLeftText(lt);
+      setRightText(rt);
+    } catch (e) {
+      setCompareError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setLoadingCompare(false);
+    }
+  };
+
+  const swapCompareSides = () => {
+    const lv = leftVersion;
+    const rv = rightVersion;
+    const lt = leftText;
+    const rt = rightText;
+    setLeftVersion(rv);
+    setRightVersion(lv);
+    setLeftText(rt);
+    setRightText(lt);
+  };
+
+  const saveCompare = async (side: "left" | "right") => {
+    const body_raw = side === "left" ? leftText : rightText;
+    const setBusy = side === "left" ? setSavingCompareLeft : setSavingCompareRight;
+
+    const latestText = prettify(data.config.format, data.latest.body_raw);
+    if (body_raw === latestText) {
+      setCompareError("No changes to save.");
+      return;
+    }
+
+    setBusy(true);
+    setCompareError(null);
+    try {
+      const url = buildConfigUrl({
+        baseUrl,
+        namespace: props.namespace,
+        path: props.path,
+      });
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body_raw }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        try {
+          const j = JSON.parse(text) as { code?: string; message?: string };
+          if (res.status === 409 && j?.code === "no_change") {
+            setCompareError("No changes to save.");
+            return;
+          }
+        } catch {
+          // ignore
+        }
+        setCompareError(`API ${res.status}: ${text || res.statusText}`);
+        return;
+      }
+      const next = (await res.json()) as GetConfigResponse;
+      setData(next);
+      setViewingVersion(null);
+      setReadOnly(false);
+      setEditorValue(prettify(next.config.format, next.latest.body_raw));
+      setCompareOpen(false);
+      await refreshVersions();
+    } catch (e) {
+      setCompareError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const compareDiff = useMemo(() => {
+    return computeChangedLineNumbers(leftText, rightText);
+  }, [leftText, rightText]);
+
+  const latestText = useMemo(() => {
+    return prettify(data.config.format, data.latest.body_raw);
+  }, [data.config.format, data.latest.body_raw]);
+
+  const saveDisabledNoChanges =
+    !readOnly && viewingVersion === null && editorValue === latestText;
+  const saveCompareLeftDisabledNoChanges = leftText === latestText;
+  const saveCompareRightDisabledNoChanges = rightText === latestText;
+
+  const leftDiffExt = useMemo(() => {
+    return lineHighlightExtension(compareDiff.left, "cm-diff-changed-left");
+  }, [compareDiff.left]);
+
+  const rightDiffExt = useMemo(() => {
+    return lineHighlightExtension(compareDiff.right, "cm-diff-changed-right");
+  }, [compareDiff.right]);
+
+  const leftExtensions = useMemo(() => {
+    return [...extensions, leftDiffExt];
+  }, [extensions, leftDiffExt]);
+
+  const rightExtensions = useMemo(() => {
+    return [...extensions, rightDiffExt];
+  }, [extensions, rightDiffExt]);
+
+  const saveNewVersion = async () => {
+    if (saveDisabledNoChanges) {
+      setError("No changes to save.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const url = buildConfigUrl({
+        baseUrl,
+        namespace: props.namespace,
+        path: props.path,
+      });
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body_raw: editorValue }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        try {
+          const j = JSON.parse(text) as { code?: string; message?: string };
+          if (res.status === 409 && j?.code === "no_change") {
+            setError("No changes to save.");
+            return;
+          }
+        } catch {
+          // ignore
+        }
+        setError(`API ${res.status}: ${text || res.statusText}`);
+        return;
+      }
+      const next = (await res.json()) as GetConfigResponse;
+      setData(next);
+      setViewingVersion(null);
+      setReadOnly(false);
+      setEditorValue(prettify(next.config.format, next.latest.body_raw));
+      await refreshVersions();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const viewVersion = async (version: number, { editable }: { editable: boolean }) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const url = buildVersionUrl({
+        baseUrl,
+        namespace: props.namespace,
+        path: props.path,
+        version,
+      });
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) {
+        const text = await res.text();
+        setError(`API ${res.status}: ${text || res.statusText}`);
+        return;
+      }
+      const payload = (await res.json()) as GetVersionResponse;
+      setViewingVersion(payload.version.version);
+      setEditorValue(prettify(data.config.format, payload.version.body_raw));
+      setReadOnly(!editable);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const backToLatest = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const url = buildConfigUrl({
+        baseUrl,
+        namespace: props.namespace,
+        path: props.path,
+      });
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) {
+        const text = await res.text();
+        setError(`API ${res.status}: ${text || res.statusText}`);
+        return;
+      }
+      const next = (await res.json()) as GetConfigResponse;
+      setData(next);
+      setViewingVersion(null);
+      setReadOnly(false);
+      setEditorValue(prettify(next.config.format, next.latest.body_raw));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteVersion = async (version: number) => {
+    if (version === data.latest.version) {
+      setError("Cannot delete the latest version.");
+      return;
+    }
+    const ok = window.confirm(`Delete version v${version}? This cannot be undone.`);
+    if (!ok) return;
+
+    setSaving(true);
+    setError(null);
+    try {
+      const url = buildDeleteVersionUrl({
+        baseUrl,
+        namespace: props.namespace,
+        path: props.path,
+        version,
+      });
+      const res = await fetch(url, { method: "DELETE" });
+      if (!res.ok) {
+        const text = await res.text();
+        setError(`API ${res.status}: ${text || res.statusText}`);
+        return;
+      }
+      if (viewingVersion === version) {
+        await backToLatest();
+      }
+      await refreshVersions();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteConfig = async () => {
+    const expected = `${props.namespace}/${props.path}`;
+    if (deleteConfirmText.trim() !== expected) {
+      setError(`Type '${expected}' to confirm deletion.`);
+      return;
+    }
+
+    const ok = window.confirm(
+      `Delete config '${expected}'?\n\nThis will delete all versions and cannot be undone.`,
+    );
+    if (!ok) return;
+
+    setSaving(true);
+    setError(null);
+    try {
+      const url = buildDeleteConfigUrl({
+        baseUrl,
+        namespace: props.namespace,
+        path: props.path,
+      });
+      const res = await fetch(url, { method: "DELETE" });
+      if (!res.ok) {
+        const text = await res.text();
+        setError(`API ${res.status}: ${text || res.statusText}`);
+        return;
+      }
+      // Back to namespace browser
+      router.push(`/configs/${encodeURIComponent(props.namespace)}`);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <header className="flex flex-col gap-1">
+        <div className="text-sm text-zinc-600 dark:text-zinc-400">
+          <Link
+            href={namespaceHref}
+            className="font-medium text-zinc-900 hover:underline dark:text-zinc-50"
+          >
+            {data.config.namespace}
+          </Link>
+          <span className="text-zinc-500">/</span>
+          <code>{data.config.path}</code>
+        </div>
+        <div className="text-xs text-zinc-600 dark:text-zinc-400">
+          format=<code>{data.config.format}</code> · latest=v{data.latest.version}
+          {viewingVersion !== null && viewingVersion !== data.latest.version ? (
+            <>
+              {" "}
+              · viewing=v{viewingVersion}{" "}
+              <button
+                type="button"
+                className="ml-2 underline hover:opacity-80"
+                onClick={backToLatest}
+                disabled={saving}
+              >
+                back to latest
+              </button>
+            </>
+          ) : null}
+        </div>
+      </header>
+
+      {error ? (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-600 dark:text-red-400">
+          {error}
+        </div>
+      ) : null}
+
+      <section className="rounded-xl border border-black/[.08] bg-white p-4 dark:border-white/[.145] dark:bg-black">
+        <div className="mb-2 flex items-center justify-between gap-4">
+          <div className="text-sm font-medium">Config</div>
+          <button
+            type="button"
+            className="h-9 cursor-pointer rounded-lg bg-zinc-900 px-3 text-sm font-medium text-zinc-50 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            onClick={saveNewVersion}
+            disabled={saving || readOnly || saveDisabledNoChanges}
+          >
+            {readOnly
+              ? "Viewing"
+              : saving
+                ? "Saving..."
+                : saveDisabledNoChanges
+                  ? "No changes"
+                  : "Save new version"}
+          </button>
+        </div>
+
+        <div className="overflow-hidden rounded-lg border border-black/[.08] dark:border-white/[.145]">
+          <CodeMirror
+            value={editorValue}
+            height="420px"
+            extensions={extensions}
+            theme={oneDark}
+            onChange={(value) => setEditorValue(value)}
+            editable={!readOnly}
+          />
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-black/[.08] bg-white p-4 dark:border-white/[.145] dark:bg-black">
+        <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="text-sm font-medium">Versions</div>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="h-9 rounded-lg border border-red-500/30 px-3 text-sm text-red-600 hover:bg-red-500/5 disabled:opacity-60 dark:text-red-400"
+              onClick={() => setDeleteOpen((v) => !v)}
+              disabled={saving}
+            >
+              Delete config
+            </button>
+            <button
+              type="button"
+              className="h-9 rounded-lg border border-black/[.08] px-3 text-sm hover:bg-zinc-950/[.03] dark:border-white/[.145] dark:hover:bg-white/[.04]"
+              onClick={refreshVersions}
+              disabled={loadingVersions}
+            >
+              {loadingVersions ? "Loading..." : "Refresh"}
+            </button>
+          </div>
+        </div>
+
+        {deleteOpen ? (
+          <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/5 p-3">
+            <div className="text-sm font-medium text-red-700 dark:text-red-300">
+              Danger zone
+            </div>
+            <div className="mt-1 text-xs text-zinc-700 dark:text-zinc-300">
+              This will hard-delete the config and all its versions. Type{" "}
+              <code>{props.namespace}/{props.path}</code> to confirm.
+            </div>
+            <div className="mt-2 flex flex-col gap-2 md:flex-row md:items-center">
+              <input
+                className="h-9 flex-1 rounded-lg border border-red-500/30 bg-transparent px-3 text-sm"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder={`${props.namespace}/${props.path}`}
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="h-9 rounded-lg border border-black/[.08] px-3 text-sm hover:bg-zinc-950/[.03] dark:border-white/[.145] dark:hover:bg-white/[.04]"
+                  onClick={() => {
+                    setDeleteOpen(false);
+                    setDeleteConfirmText("");
+                  }}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="h-9 rounded-lg bg-red-600 px-3 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+                  onClick={deleteConfig}
+                  disabled={saving || deleteConfirmText.trim() !== `${props.namespace}/${props.path}`}
+                >
+                  {saving ? "Deleting..." : "Confirm delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {versions === null ? (
+          <div className="text-sm text-zinc-600 dark:text-zinc-400">
+            Click refresh to load versions.
+          </div>
+        ) : versions.length === 0 ? (
+          <div className="text-sm text-zinc-600 dark:text-zinc-400">
+            No versions.
+          </div>
+        ) : (
+          <div className="divide-y divide-black/[.06] dark:divide-white/[.12]">
+            {versions.map((v) => {
+              const isLatest = v.version === data.latest.version;
+              return (
+                <div
+                  key={v.id}
+                  className="flex items-center justify-between gap-4 py-3"
+                >
+                  <div className="flex flex-col">
+                    <div className="text-sm font-medium">
+                      v{v.version}{" "}
+                      {isLatest ? (
+                        <span className="ml-2 rounded-full bg-zinc-900 px-2 py-0.5 text-xs text-zinc-50 dark:bg-zinc-50 dark:text-zinc-900">
+                          latest
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                      {new Date(v.created_at).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="h-9 rounded-lg border border-black/[.08] px-3 text-sm hover:bg-zinc-950/[.03] disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-white/[.04]"
+                      disabled={saving}
+                      onClick={() => viewVersion(v.version, { editable: false })}
+                    >
+                      View
+                    </button>
+                    <button
+                      type="button"
+                      className="h-9 rounded-lg border border-black/[.08] px-3 text-sm hover:bg-zinc-950/[.03] disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-white/[.04]"
+                      disabled={saving}
+                      onClick={() => viewVersion(v.version, { editable: true })}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="h-9 rounded-lg border border-black/[.08] px-3 text-sm hover:bg-zinc-950/[.03] disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-white/[.04]"
+                      disabled={saving || isLatest}
+                      onClick={() => openCompare(v.version)}
+                      title={
+                        isLatest ? "Already the latest" : "Compare this version to latest"
+                      }
+                    >
+                      Compare to latest
+                    </button>
+                    <button
+                      type="button"
+                      className="h-9 rounded-lg border border-red-500/30 px-3 text-sm text-red-600 hover:bg-red-500/5 disabled:opacity-60 dark:text-red-400"
+                      disabled={saving || isLatest}
+                      onClick={() => deleteVersion(v.version)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {compareOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-6xl overflow-hidden rounded-xl border border-black/[.08] bg-white shadow-xl dark:border-white/[.145] dark:bg-black">
+            <div className="flex items-center justify-between gap-4 border-b border-black/[.08] p-4 dark:border-white/[.145]">
+              <div className="flex flex-col gap-1">
+                <div className="text-sm font-medium">Compare versions</div>
+                <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                  Changes are highlighted (best-effort). Edit either side and save
+                  to create a new version.
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="h-9 rounded-lg border border-black/[.08] px-3 text-sm hover:bg-zinc-950/[.03] disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-white/[.04]"
+                  onClick={swapCompareSides}
+                  disabled={loadingCompare || savingCompareLeft || savingCompareRight}
+                >
+                  Swap
+                </button>
+                <button
+                  type="button"
+                  className="h-9 rounded-lg border border-black/[.08] px-3 text-sm hover:bg-zinc-950/[.03] dark:border-white/[.145] dark:hover:bg-white/[.04]"
+                  onClick={() => setCompareOpen(false)}
+                  disabled={savingCompareLeft || savingCompareRight}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {compareError ? (
+              <div className="border-b border-red-500/30 bg-red-500/5 p-3 text-sm text-red-600 dark:text-red-400">
+                {compareError}
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
+              <div className="rounded-xl border border-black/[.08] bg-white p-3 dark:border-white/[.145] dark:bg-black">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                    <span className="font-medium text-zinc-900 dark:text-zinc-50">
+                      Left
+                    </span>
+                    <select
+                      className="h-8 rounded-lg border border-black/[.08] bg-transparent px-2 text-xs dark:border-white/[.145]"
+                      value={leftVersion ?? undefined}
+                      onChange={async (e) => {
+                        const v = Number(e.target.value);
+                        setLeftVersion(v);
+                        setLoadingCompare(true);
+                        setCompareError(null);
+                        try {
+                          const t = await fetchVersionBodyRaw(v);
+                          setLeftText(t);
+                        } catch (err) {
+                          setCompareError(
+                            err instanceof Error ? err.message : "Unknown error",
+                          );
+                        } finally {
+                          setLoadingCompare(false);
+                        }
+                      }}
+                      disabled={loadingCompare || savingCompareLeft || savingCompareRight || versions === null}
+                    >
+                      {(versions ?? []).map((m) => (
+                        <option key={`l-${m.version}`} value={m.version}>
+                          v{m.version}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    className="h-9 cursor-pointer rounded-lg bg-zinc-900 px-3 text-sm font-medium text-zinc-50 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                    onClick={() => saveCompare("left")}
+                    disabled={
+                      loadingCompare ||
+                      savingCompareLeft ||
+                      savingCompareRight ||
+                      saveCompareLeftDisabledNoChanges
+                    }
+                  >
+                    {savingCompareLeft
+                      ? "Saving..."
+                      : saveCompareLeftDisabledNoChanges
+                        ? "No changes"
+                        : "Save new version"}
+                  </button>
+                </div>
+                <div className="overflow-hidden rounded-lg border border-black/[.08] dark:border-white/[.145]">
+                  <CodeMirror
+                    value={leftText}
+                    height="360px"
+                    extensions={leftExtensions}
+                    theme={oneDark}
+                    onChange={(value) => setLeftText(value)}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-black/[.08] bg-white p-3 dark:border-white/[.145] dark:bg-black">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                    <span className="font-medium text-zinc-900 dark:text-zinc-50">
+                      Right
+                    </span>
+                    <select
+                      className="h-8 rounded-lg border border-black/[.08] bg-transparent px-2 text-xs dark:border-white/[.145]"
+                      value={rightVersion ?? undefined}
+                      onChange={async (e) => {
+                        const v = Number(e.target.value);
+                        setRightVersion(v);
+                        setLoadingCompare(true);
+                        setCompareError(null);
+                        try {
+                          const t = await fetchVersionBodyRaw(v);
+                          setRightText(t);
+                        } catch (err) {
+                          setCompareError(
+                            err instanceof Error ? err.message : "Unknown error",
+                          );
+                        } finally {
+                          setLoadingCompare(false);
+                        }
+                      }}
+                      disabled={loadingCompare || savingCompareLeft || savingCompareRight || versions === null}
+                    >
+                      {(versions ?? []).map((m) => (
+                        <option key={`r-${m.version}`} value={m.version}>
+                          v{m.version}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    className="h-9 cursor-pointer rounded-lg bg-zinc-900 px-3 text-sm font-medium text-zinc-50 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                    onClick={() => saveCompare("right")}
+                    disabled={
+                      loadingCompare ||
+                      savingCompareLeft ||
+                      savingCompareRight ||
+                      saveCompareRightDisabledNoChanges
+                    }
+                  >
+                    {savingCompareRight
+                      ? "Saving..."
+                      : saveCompareRightDisabledNoChanges
+                        ? "No changes"
+                        : "Save new version"}
+                  </button>
+                </div>
+                <div className="overflow-hidden rounded-lg border border-black/[.08] dark:border-white/[.145]">
+                  <CodeMirror
+                    value={rightText}
+                    height="360px"
+                    extensions={rightExtensions}
+                    theme={oneDark}
+                    onChange={(value) => setRightText(value)}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function prettify(format: ConfigFormat, raw: string): string {
+  if (format !== "json") return raw;
+  try {
+    const obj = JSON.parse(raw);
+    return JSON.stringify(obj, null, 2) + "\n";
+  } catch {
+    return raw;
+  }
+}
+
