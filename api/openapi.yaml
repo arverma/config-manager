@@ -1,0 +1,635 @@
+openapi: 3.0.3
+info:
+  title: Config Manager API
+  version: 0.1.0
+  description: |
+    A Postgres-backed config registry with immutable versioning and a selectable "latest" version.
+
+    Identity model:
+    - A logical config is addressed by: namespace + path
+    - REST URL shape resembles folders: /configs/{namespace}/{path}
+
+    Note on `{path}`:
+    - `{path}` is treated as a "greedy" path segment in the server router (it may contain `/`).
+    - For OpenAPI tooling that doesn't support greedy segments, treat `{path}` as the remainder of the URL after `{namespace}`.
+servers:
+  - url: http://localhost:8080
+
+tags:
+  - name: Namespaces
+    description: Manage namespaces and browse paths.
+  - name: Configs
+    description: CRUD and versioning for configs.
+
+paths:
+  /namespaces:
+    get:
+      tags: [Namespaces]
+      summary: List namespaces
+      operationId: listNamespaces
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of namespaces.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NamespaceListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      tags: [Namespaces]
+      summary: Create a namespace
+      operationId: createNamespace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNamespaceRequest"
+      responses:
+        "201":
+          description: Created namespace.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Namespace"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /namespaces/{namespace}:
+    delete:
+      tags: [Namespaces]
+      summary: Delete a namespace (hard delete)
+      description: |
+        Hard-deletes a namespace.
+        This is only allowed when the namespace has 0 configs.
+      operationId: deleteNamespace
+      parameters:
+        - $ref: "#/components/parameters/NamespacePath"
+      responses:
+        "204":
+          description: Deleted.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /namespaces/{namespace}/browse:
+    get:
+      tags: [Namespaces]
+      summary: Browse a namespace (Vault-like folder listing)
+      description: |
+        Returns the immediate children under `prefix` within a namespace:
+        - folders (virtual; derived from path segments)
+        - configs (leaf entries)
+      operationId: browseNamespace
+      parameters:
+        - $ref: "#/components/parameters/NamespacePath"
+        - $ref: "#/components/parameters/Prefix"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of browse entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrowseResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /configs:
+    get:
+      tags: [Configs]
+      summary: Browse configs
+      description: |
+        Returns a list of configs, optionally filtered by namespace and a path prefix.
+      operationId: listConfigs
+      parameters:
+        - $ref: "#/components/parameters/NamespaceQuery"
+        - $ref: "#/components/parameters/Prefix"
+        - $ref: "#/components/parameters/Recursive"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of configs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /configs/{namespace}/{path}:
+    get:
+      tags: [Configs]
+      summary: Get latest config version
+      operationId: getLatestConfig
+      parameters:
+        - $ref: "#/components/parameters/NamespacePath"
+        - $ref: "#/components/parameters/PathGreedy"
+      responses:
+        "200":
+          description: Latest version of the config.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetConfigResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    delete:
+      tags: [Configs]
+      summary: Delete a config (hard delete)
+      description: |
+        Hard-deletes the config and all its versions for the given namespace/path.
+      operationId: deleteConfig
+      parameters:
+        - $ref: "#/components/parameters/NamespacePath"
+        - $ref: "#/components/parameters/PathGreedy"
+      responses:
+        "204":
+          description: Deleted.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      tags: [Configs]
+      summary: Create a config (initial version)
+      operationId: createConfig
+      parameters:
+        - $ref: "#/components/parameters/NamespacePath"
+        - $ref: "#/components/parameters/PathGreedy"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConfigRequest"
+      responses:
+        "201":
+          description: Created config with its latest version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetConfigResponse"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    put:
+      tags: [Configs]
+      summary: Create a new config version
+      description: |
+        Appends a new immutable version and (by default) makes it the latest.
+        If `base_version` is provided, the request fails with 409 if the current latest version is not `base_version`.
+        If `body_raw` is identical to the current latest version, the request fails with 409 (`code=no_change`).
+      operationId: updateConfig
+      parameters:
+        - $ref: "#/components/parameters/NamespacePath"
+        - $ref: "#/components/parameters/PathGreedy"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateConfigRequest"
+      responses:
+        "200":
+          description: Updated config (latest version returned).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetConfigResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /configs/{namespace}/{path}/versions:
+    get:
+      tags: [Configs]
+      summary: List config versions
+      operationId: listConfigVersions
+      parameters:
+        - $ref: "#/components/parameters/NamespacePath"
+        - $ref: "#/components/parameters/PathGreedy"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of versions, newest-first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /configs/{namespace}/{path}/versions/{version}:
+    get:
+      tags: [Configs]
+      summary: Get a specific config version
+      operationId: getConfigVersion
+      parameters:
+        - $ref: "#/components/parameters/NamespacePath"
+        - $ref: "#/components/parameters/PathGreedy"
+        - $ref: "#/components/parameters/VersionPath"
+      responses:
+        "200":
+          description: The requested version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetVersionResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    delete:
+      tags: [Configs]
+      summary: Delete a specific config version
+      description: |
+        Hard-deletes a non-latest version.
+        Deleting the current latest version is forbidden.
+      operationId: deleteConfigVersion
+      parameters:
+        - $ref: "#/components/parameters/NamespacePath"
+        - $ref: "#/components/parameters/PathGreedy"
+        - $ref: "#/components/parameters/VersionPath"
+      responses:
+        "204":
+          description: Deleted.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+components:
+  parameters:
+    NamespacePath:
+      name: namespace
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        pattern: "^[a-z_]+$"
+      description: Top-level namespace (lowercase letters and underscore only).
+    PathGreedy:
+      name: path
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        pattern: "^\\S+$"
+      description: |
+        Folder-like path within a namespace. May contain `/`.
+        Must not start with `/` and must not contain `..` segments.
+    NamespaceQuery:
+      name: namespace
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Filter results to a single namespace.
+    Prefix:
+      name: prefix
+      in: query
+      required: false
+      schema:
+        type: string
+      description: |
+        Optional path prefix filter (e.g. `pipelines/orders/`).
+        The API treats this as a prefix match against `path`.
+    Recursive:
+      name: recursive
+      in: query
+      required: false
+      schema:
+        type: boolean
+        default: true
+      description: If false, return only immediate children under `prefix`.
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 50
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Opaque pagination cursor returned by list endpoints.
+    VersionPath:
+      name: version
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+
+  responses:
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Conflict (e.g. already exists, optimistic concurrency failure, or no-op update where `body_raw` matches current latest).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    UUID:
+      type: string
+      format: uuid
+    RFC3339:
+      type: string
+      format: date-time
+
+    ConfigFormat:
+      type: string
+      enum: [json, yaml]
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: bad_request
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    ConfigKey:
+      type: object
+      required: [namespace, path]
+      properties:
+        namespace:
+          type: string
+        path:
+          type: string
+
+    Config:
+      allOf:
+        - $ref: "#/components/schemas/ConfigKey"
+        - type: object
+          required: [id, created_at, updated_at]
+          properties:
+            id:
+              $ref: "#/components/schemas/UUID"
+            format:
+              $ref: "#/components/schemas/ConfigFormat"
+            latest_version_id:
+              $ref: "#/components/schemas/UUID"
+            created_at:
+              $ref: "#/components/schemas/RFC3339"
+            updated_at:
+              $ref: "#/components/schemas/RFC3339"
+
+    ConfigVersionMeta:
+      type: object
+      required: [id, version, created_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        version:
+          type: integer
+          minimum: 1
+        created_at:
+          $ref: "#/components/schemas/RFC3339"
+        created_by:
+          type: string
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+        content_sha256:
+          type: string
+          nullable: true
+
+    ConfigVersion:
+      allOf:
+        - $ref: "#/components/schemas/ConfigVersionMeta"
+        - type: object
+          required: [body_raw]
+          properties:
+            body_raw:
+              type: string
+            body_json:
+              description: Parsed representation (if produced by the server).
+              nullable: true
+              type: object
+              additionalProperties: true
+
+    CreateConfigRequest:
+      type: object
+      required: [format, body_raw]
+      properties:
+        format:
+          $ref: "#/components/schemas/ConfigFormat"
+        body_raw:
+          type: string
+          description: Raw YAML or JSON string (must match `format` in this request).
+        comment:
+          type: string
+        created_by:
+          type: string
+          description: Optional actor label (useful before auth is added).
+
+    UpdateConfigRequest:
+      type: object
+      required: [body_raw]
+      properties:
+        body_raw:
+          type: string
+          description: Raw YAML or JSON string (must match the config's stored format).
+        comment:
+          type: string
+        created_by:
+          type: string
+        base_version:
+          type: integer
+          minimum: 1
+          description: Optional optimistic concurrency guard (must equal current latest version).
+
+    GetConfigResponse:
+      type: object
+      required: [config, latest]
+      properties:
+        config:
+          $ref: "#/components/schemas/Config"
+        latest:
+          $ref: "#/components/schemas/ConfigVersion"
+
+    GetVersionResponse:
+      type: object
+      required: [config, version]
+      properties:
+        config:
+          $ref: "#/components/schemas/Config"
+        version:
+          $ref: "#/components/schemas/ConfigVersion"
+
+    ConfigListItem:
+      type: object
+      required: [config, latest_meta]
+      properties:
+        config:
+          $ref: "#/components/schemas/Config"
+        latest_meta:
+          $ref: "#/components/schemas/ConfigVersionMeta"
+
+    Namespace:
+      type: object
+      required: [id, name, created_at, updated_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        name:
+          type: string
+        created_at:
+          $ref: "#/components/schemas/RFC3339"
+        updated_at:
+          $ref: "#/components/schemas/RFC3339"
+
+    NamespaceWithCount:
+      allOf:
+        - $ref: "#/components/schemas/Namespace"
+        - type: object
+          required: [config_count]
+          properties:
+            config_count:
+              type: integer
+              minimum: 0
+
+    NamespaceListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NamespaceWithCount"
+        next_cursor:
+          type: string
+          nullable: true
+
+    CreateNamespaceRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z_]+$"
+          description: Namespace name (lowercase letters and underscore only).
+
+    BrowseEntryFolder:
+      type: object
+      required: [type, name, full_path]
+      properties:
+        type:
+          type: string
+          enum: [folder]
+        name:
+          type: string
+        full_path:
+          type: string
+          description: Folder prefix to browse next (ends with `/`).
+
+    BrowseEntryConfig:
+      type: object
+      required: [type, name, full_path, format, latest_version]
+      properties:
+        type:
+          type: string
+          enum: [config]
+        name:
+          type: string
+        full_path:
+          type: string
+          description: Config path (no trailing `/`).
+        format:
+          $ref: "#/components/schemas/ConfigFormat"
+        latest_version:
+          type: integer
+          minimum: 1
+
+    BrowseEntry:
+      oneOf:
+        - $ref: "#/components/schemas/BrowseEntryFolder"
+        - $ref: "#/components/schemas/BrowseEntryConfig"
+
+    BrowseResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BrowseEntry"
+        next_cursor:
+          type: string
+          nullable: true
+
+    ConfigListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigListItem"
+        next_cursor:
+          type: string
+          nullable: true
+
+    VersionListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigVersionMeta"
+        next_cursor:
+          type: string
+          nullable: true
+
