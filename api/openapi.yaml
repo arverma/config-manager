@@ -13,7 +13,10 @@ info:
     - `{path}` is treated as a "greedy" path segment in the server router (it may contain `/`).
     - For OpenAPI tooling that doesn't support greedy segments, treat `{path}` as the remainder of the URL after `{namespace}`.
 servers:
+  # Local dev (API at root)
   - url: http://localhost:8080
+  # Packaged deployment (ingress routes /api to the API service)
+  - url: /api
 
 tags:
   - name: Health

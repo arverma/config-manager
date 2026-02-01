@@ -18,7 +18,6 @@ function joinPath(a: string, b: string): string {
 }
 
 export function NamespaceBrowserView(props: {
-  baseUrl: string;
   namespace: string;
   prefix: string; // ends with / or empty
 

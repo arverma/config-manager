@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"net"
+	"net/url"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,9 +20,9 @@ import (
 
 func main() {
 	port := getenvDefault("PORT", "8080")
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		log.Fatal("DATABASE_URL is required")
+	databaseURL, err := databaseURLFromEnv()
+	if err != nil {
+		log.Fatal(err.Error())
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -61,4 +65,40 @@ func getenvDefault(key, def string) string {
 		return def
 	}
 	return v
+}
+
+func databaseURLFromEnv() (string, error) {
+	if v := os.Getenv("DATABASE_URL"); v != "" {
+		return v, nil
+	}
+
+	host := strings.TrimSpace(os.Getenv("DB_HOST"))
+	dbName := strings.TrimSpace(os.Getenv("DB_NAME"))
+	user := strings.TrimSpace(os.Getenv("DB_USER"))
+	password := os.Getenv("DB_PASSWORD")
+	port := strings.TrimSpace(getenvDefault("DB_PORT", "5432"))
+
+	if host == "" || dbName == "" || user == "" || password == "" {
+		return "", errors.New("DATABASE_URL is required, or set DB_HOST, DB_PORT (optional), DB_NAME, DB_USER, DB_PASSWORD (and optionally DB_SSLMODE)")
+	}
+
+	sslmode := strings.TrimSpace(os.Getenv("DB_SSLMODE"))
+	if sslmode == "" {
+		// Safe-by-default for production; local dev can override with DB_SSLMODE=disable.
+		sslmode = "require"
+		if host == "localhost" || host == "127.0.0.1" {
+			sslmode = "disable"
+		}
+	}
+
+	u := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(user, password),
+		Host:   net.JoinHostPort(host, port),
+		Path:   "/" + dbName,
+	}
+	q := url.Values{}
+	q.Set("sslmode", sslmode)
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }

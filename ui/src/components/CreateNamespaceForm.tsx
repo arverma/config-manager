@@ -1,16 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { getConfigApiBaseUrl } from "@/lib/configApi";
 import { apiFetch, HttpError } from "@/lib/api/client";
 import { invalidateNamespaceQueries } from "@/lib/api/hooks";
+import { buildNamespacesPath } from "@/lib/configApi";
 
 export function CreateNamespaceForm() {
   const router = useRouter();
-  const baseUrl = getConfigApiBaseUrl();
   const queryClient = useQueryClient();
 
   const [open, setOpen] = useState(false);
@@ -18,13 +17,9 @@ export function CreateNamespaceForm() {
 
   const nameIsValid = /^[a-z_]+$/.test(name.trim());
 
-  const endpoint = useMemo(() => {
-    return `${baseUrl}/namespaces`;
-  }, [baseUrl]);
-
   const createMutation = useMutation({
     mutationFn: async () => {
-      await apiFetch(endpoint, {
+      await apiFetch(buildNamespacesPath(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),

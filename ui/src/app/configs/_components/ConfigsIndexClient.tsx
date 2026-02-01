@@ -6,12 +6,9 @@ import { CreateNamespaceForm } from "@/components/CreateNamespaceForm";
 import { ApiErrorBanner } from "@/components/shared/ApiErrorBanner";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { useNamespaces } from "@/lib/api/hooks";
-import { getConfigApiBaseUrl } from "@/lib/configApi";
 
 export function ConfigsIndexClient() {
-  const baseUrl = getConfigApiBaseUrl();
-
-  const namespacesQuery = useNamespaces({ baseUrl, limit: 500 });
+  const namespacesQuery = useNamespaces({ limit: 500 });
 
   return (
     <div className="flex flex-col gap-8">

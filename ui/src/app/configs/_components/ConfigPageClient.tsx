@@ -12,7 +12,6 @@ import { ConfigEditor } from "@/components/ConfigEditor";
 import { HttpError } from "@/lib/api/client";
 import { configLatestQueryOptions, useNamespaceBrowse } from "@/lib/api/hooks";
 import type { GetConfigResponse } from "@/lib/api/types";
-import { getConfigApiBaseUrl } from "@/lib/configApi";
 
 export function ConfigPageClient() {
   const router = useRouter();
@@ -26,15 +25,12 @@ export function ConfigPageClient() {
   const createMode = searchParams.get("create") === "1";
   const initialFormat = searchParams.get("format") === "json" ? "json" : "yaml";
 
-  const baseUrl = getConfigApiBaseUrl();
-
   const latestOptions = useMemo(() => {
     return configLatestQueryOptions({
-      baseUrl,
       namespace,
       path: pathStr || "__noop__",
     });
-  }, [baseUrl, namespace, pathStr]);
+  }, [namespace, pathStr]);
 
   const configQuery = useQuery({
     queryKey: pathStr ? latestOptions.queryKey : ["noop"],
@@ -43,7 +39,6 @@ export function ConfigPageClient() {
   });
 
   const browseQuery = useNamespaceBrowse({
-    baseUrl,
     namespace,
     prefix,
   });
@@ -75,7 +70,6 @@ export function ConfigPageClient() {
     return (
       <div className="flex flex-col gap-6">
         <ConfigEditor
-          baseUrl={baseUrl}
           namespace={namespace}
           path={pathStr}
           initial={configQuery.data}
@@ -97,7 +91,6 @@ export function ConfigPageClient() {
     return (
       <div className="flex flex-col gap-6">
         <CreateConfigEditor
-          baseUrl={baseUrl}
           namespace={namespace}
           path={pathStr}
           initialFormat={initialFormat}
@@ -110,7 +103,6 @@ export function ConfigPageClient() {
   return (
     <div className="flex flex-col gap-6">
       <NamespaceBrowserContainer
-        baseUrl={baseUrl}
         namespace={namespace}
         prefix={prefix}
       />

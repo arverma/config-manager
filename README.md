@@ -45,6 +45,7 @@ make api-run
 In a second terminal:
 
 ```bash
+make ui-install
 make ui-dev
 ```
 
@@ -52,12 +53,13 @@ Open the UI at `http://localhost:3000` (API is `http://localhost:8080`).
 
 ## Docs
 
-- `api/openapi.yaml`: API contract (source of truth)
-- `docs/architecture.md`: architecture + versioning model
-- `docs/development.md`: local workflow
-- `docs/deployment.md`: production notes + checklist
-- `docs/environment-variables.md`: all env vars
-- `CONTRIBUTING.md`: contributor workflow and conventions
+- [`api/openapi.yaml`](api/openapi.yaml): API contract (source of truth)
+- Postman tip: import [`api/openapi.yaml`](api/openapi.yaml) to generate a collection (see [`docs/development.md`](docs/development.md))
+- [`docs/architecture.md`](docs/architecture.md): architecture + versioning model
+- [`docs/development.md`](docs/development.md): local workflow
+- [`docs/deployment.md`](docs/deployment.md): production notes + checklist
+- [`docs/environment-variables.md`](docs/environment-variables.md): all env vars
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): contributor workflow and conventions
 
 ## Common commands
 
@@ -65,5 +67,3 @@ Open the UI at `http://localhost:3000` (API is `http://localhost:8080`).
 - `make check`: backend tests + UI lint/typecheck
 - `make smoke`: quick API smoke test
 - `make db-reset`: reset local Postgres volume
-
-

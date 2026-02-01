@@ -19,6 +19,7 @@ make api-run
 Terminal 2:
 
 ```bash
+make ui-install
 make ui-dev
 ```
 

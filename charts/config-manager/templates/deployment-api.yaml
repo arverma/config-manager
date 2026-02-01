@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "config-manager.fullname" . }}-api
+  labels:
+    {{- include "config-manager.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "config-manager.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "config-manager.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+    spec:
+      {{ $basePath := (.Values.api.env.HTTP_BASE_PATH | default "/api") }}
+      {{ $apiSecretsEnabled := and .Values.api.externalSecret .Values.api.externalSecret.enabled }}
+      containers:
+        - name: api
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          {{- if $apiSecretsEnabled }}
+          envFrom:
+            - secretRef:
+                name: {{ include "config-manager.apiSecretName" . | quote }}
+          {{- end }}
+          env:
+            - name: PORT
+              value: "8080"
+            - name: HTTP_BASE_PATH
+              value: {{ $basePath | quote }}
+            - name: CORS_ALLOWED_ORIGINS
+              value: {{ .Values.api.env.CORS_ALLOWED_ORIGINS | default "*" | quote }}
+            {{- if .Values.database.parts.host }}
+            - name: DB_HOST
+              value: {{ .Values.database.parts.host | quote }}
+            - name: DB_PORT
+              value: {{ (.Values.database.parts.port | default 5432) | quote }}
+            - name: DB_NAME
+              value: {{ required "database.parts.name is required when database.parts.host is set" .Values.database.parts.name | quote }}
+            - name: DB_USER
+              value: {{ required "database.parts.user is required when database.parts.host is set" .Values.database.parts.user | quote }}
+            {{- if .Values.database.parts.sslmode }}
+            - name: DB_SSLMODE
+              value: {{ .Values.database.parts.sslmode | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if or .Values.database.existingSecretName .Values.database.url }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "config-manager.dbSecretName" . | quote }}
+                  key: {{ .Values.database.existingSecretKey | default "DATABASE_URL" | quote }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: {{ printf "%s/healthz" $basePath }}
+              port: http
+          readinessProbe:
+            httpGet:
+              path: {{ printf "%s/readyz" $basePath }}
+              port: http
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+
