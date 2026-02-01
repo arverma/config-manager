@@ -16,18 +16,21 @@ import (
 func NewRouter(db *pgxpool.Pool) http.Handler {
 	r := chi.NewRouter()
 
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(30 * time.Second))
-	r.Use(middleware.Logger)
+	basePath := normalizeBasePath(os.Getenv("HTTP_BASE_PATH"))
 
-	r.Use(corsMiddleware(parseAllowedOriginsEnv()))
+	api := chi.NewRouter()
+	api.Use(middleware.RequestID)
+	api.Use(middleware.RealIP)
+	api.Use(middleware.Recoverer)
+	api.Use(middleware.Timeout(30 * time.Second))
+	api.Use(middleware.Logger)
 
-	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	api.Use(corsMiddleware(parseAllowedOriginsEnv()))
+
+	api.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
-	r.Get("/readyz", func(w http.ResponseWriter, req *http.Request) {
+	api.Get("/readyz", func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 2*time.Second)
 		defer cancel()
 		if err := db.Ping(ctx); err != nil {
@@ -38,10 +41,10 @@ func NewRouter(db *pgxpool.Pool) http.Handler {
 	})
 
 	// Namespaces
-	r.Get("/namespaces", func(w http.ResponseWriter, req *http.Request) {
+	api.Get("/namespaces", func(w http.ResponseWriter, req *http.Request) {
 		handleListNamespaces(w, req, db)
 	})
-	r.Post("/namespaces", func(w http.ResponseWriter, req *http.Request) {
+	api.Post("/namespaces", func(w http.ResponseWriter, req *http.Request) {
 		var body struct {
 			Name string `json:"name"`
 		}
@@ -51,22 +54,22 @@ func NewRouter(db *pgxpool.Pool) http.Handler {
 		}
 		handleCreateNamespace(w, req, db, body.Name)
 	})
-	r.Delete("/namespaces/{namespace}", func(w http.ResponseWriter, req *http.Request) {
+	api.Delete("/namespaces/{namespace}", func(w http.ResponseWriter, req *http.Request) {
 		ns := chi.URLParam(req, "namespace")
 		handleDeleteNamespace(w, req, db, ns)
 	})
-	r.Get("/namespaces/{namespace}/browse", func(w http.ResponseWriter, req *http.Request) {
+	api.Get("/namespaces/{namespace}/browse", func(w http.ResponseWriter, req *http.Request) {
 		ns := chi.URLParam(req, "namespace")
 		handleBrowseNamespace(w, req, db, ns)
 	})
 
 	// Browse
-	r.Get("/configs", func(w http.ResponseWriter, req *http.Request) {
+	api.Get("/configs", func(w http.ResponseWriter, req *http.Request) {
 		handleListConfigs(w, req, db)
 	})
 
 	// Greedy path routing: /configs/{namespace}/{path...}
-	r.Route("/configs/{namespace}", func(r chi.Router) {
+	api.Route("/configs/{namespace}", func(r chi.Router) {
 		r.Route("/{path:.*}", func(r chi.Router) {
 			r.Get("/", func(w http.ResponseWriter, req *http.Request) {
 				handleGetLatestConfig(w, req, db)
@@ -106,6 +109,20 @@ func NewRouter(db *pgxpool.Pool) http.Handler {
 		})
 	})
 
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(middleware.Logger)
+
+	r.Use(corsMiddleware(parseAllowedOriginsEnv()))
+
+	if basePath == "" {
+		r.Mount("/", api)
+		return r
+	}
+
+	r.Mount(basePath, api)
 	return r
 }
 
@@ -127,6 +144,21 @@ func parseAllowedOriginsEnv() []string {
 		return []string{"http://localhost:3000"}
 	}
 	return out
+}
+
+func normalizeBasePath(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "/" {
+		return ""
+	}
+	if !strings.HasPrefix(raw, "/") {
+		raw = "/" + raw
+	}
+	raw = strings.TrimSuffix(raw, "/")
+	if raw == "/" {
+		return ""
+	}
+	return raw
 }
 
 func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {

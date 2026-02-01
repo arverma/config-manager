@@ -10,15 +10,15 @@ import type {
   VersionListResponse,
 } from "@/lib/api/types";
 import {
-  buildConfigUrl,
-  buildNamespaceBrowseUrl,
-  buildNamespacesUrl,
-  buildVersionUrl,
-  buildVersionsUrl,
+  buildConfigPath,
+  buildNamespaceBrowsePath,
+  buildNamespacesPath,
+  buildVersionPath,
+  buildVersionsPath,
 } from "@/lib/configApi";
 
-export function namespacesQueryOptions(args: { baseUrl: string; limit?: number }) {
-  const url = buildNamespacesUrl({ baseUrl: args.baseUrl });
+export function namespacesQueryOptions(args: { limit?: number }) {
+  const url = buildNamespacesPath();
   const qp = new URLSearchParams();
   if (args.limit) qp.set("limit", String(args.limit));
   const fullUrl = qp.toString() ? `${url}?${qp.toString()}` : url;
@@ -31,12 +31,10 @@ export function namespacesQueryOptions(args: { baseUrl: string; limit?: number }
 }
 
 export function namespaceBrowseQueryOptions(args: {
-  baseUrl: string;
   namespace: string;
   prefix: string;
 }) {
-  const url = buildNamespaceBrowseUrl({
-    baseUrl: args.baseUrl,
+  const url = buildNamespaceBrowsePath({
     namespace: args.namespace,
     prefix: args.prefix,
   });
@@ -47,12 +45,10 @@ export function namespaceBrowseQueryOptions(args: {
 }
 
 export function configLatestQueryOptions(args: {
-  baseUrl: string;
   namespace: string;
   path: string;
 }) {
-  const url = buildConfigUrl({
-    baseUrl: args.baseUrl,
+  const url = buildConfigPath({
     namespace: args.namespace,
     path: args.path,
   });
@@ -64,12 +60,10 @@ export function configLatestQueryOptions(args: {
 }
 
 export function configVersionsQueryOptions(args: {
-  baseUrl: string;
   namespace: string;
   path: string;
 }) {
-  const url = buildVersionsUrl({
-    baseUrl: args.baseUrl,
+  const url = buildVersionsPath({
     namespace: args.namespace,
     path: args.path,
   });
@@ -81,13 +75,11 @@ export function configVersionsQueryOptions(args: {
 }
 
 export function configVersionQueryOptions(args: {
-  baseUrl: string;
   namespace: string;
   path: string;
   version: number;
 }) {
-  const url = buildVersionUrl({
-    baseUrl: args.baseUrl,
+  const url = buildVersionPath({
     namespace: args.namespace,
     path: args.path,
     version: args.version,
@@ -100,20 +92,18 @@ export function configVersionQueryOptions(args: {
 }
 
 export function useNamespaces(args: {
-  baseUrl: string;
   limit?: number;
   enabled?: boolean;
   staleTime?: number;
 }) {
   return useQuery({
-    ...namespacesQueryOptions({ baseUrl: args.baseUrl, limit: args.limit }),
+    ...namespacesQueryOptions({ limit: args.limit }),
     enabled: args.enabled,
     staleTime: args.staleTime,
   });
 }
 
 export function useNamespaceBrowse(args: {
-  baseUrl: string;
   namespace: string;
   prefix: string;
   enabled?: boolean;
@@ -121,7 +111,6 @@ export function useNamespaceBrowse(args: {
 }) {
   return useQuery({
     ...namespaceBrowseQueryOptions({
-      baseUrl: args.baseUrl,
       namespace: args.namespace,
       prefix: args.prefix,
     }),
@@ -131,7 +120,6 @@ export function useNamespaceBrowse(args: {
 }
 
 export function useConfigLatest(args: {
-  baseUrl: string;
   namespace: string;
   path: string;
   enabled?: boolean;
@@ -139,7 +127,6 @@ export function useConfigLatest(args: {
 }) {
   return useQuery({
     ...configLatestQueryOptions({
-      baseUrl: args.baseUrl,
       namespace: args.namespace,
       path: args.path,
     }),

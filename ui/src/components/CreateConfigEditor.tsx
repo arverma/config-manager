@@ -9,20 +9,18 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import type { ConfigFormat } from "@/lib/configApi";
-import { buildConfigUrl, getConfigApiBaseUrl } from "@/lib/configApi";
+import { buildConfigPath } from "@/lib/configApi";
 import { apiFetch, HttpError } from "@/lib/api/client";
 import { invalidateConfigQueries } from "@/lib/api/hooks";
 import { defaultConfigBody, prettify } from "@/lib/utils/prettify";
 import { CodeEditor } from "@/components/shared/CodeEditor";
 
 export function CreateConfigEditor(props: {
-  baseUrl: string;
   namespace: string;
   path: string;
   initialFormat: ConfigFormat;
 }) {
   const router = useRouter();
-  const baseUrl = props.baseUrl || getConfigApiBaseUrl();
   const queryClient = useQueryClient();
   const namespaceHref = `/configs/${encodeURIComponent(props.namespace)}`;
 
@@ -36,12 +34,11 @@ export function CreateConfigEditor(props: {
   }, [format]);
 
   const url = useMemo(() => {
-    return buildConfigUrl({
-      baseUrl,
+    return buildConfigPath({
       namespace: props.namespace,
       path: props.path,
     });
-  }, [baseUrl, props.namespace, props.path]);
+  }, [props.namespace, props.path]);
 
   const createMutation = useMutation({
     mutationFn: async () => {

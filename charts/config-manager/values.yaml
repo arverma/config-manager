@@ -1,0 +1,62 @@
+nameOverride: ""
+fullnameOverride: ""
+
+api:
+  image:
+    repository: "LOCATION-docker.pkg.dev/PROJECT/REPO/config-manager-api"
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    port: 8080
+  externalSecret:
+    # If enabled, an ExternalSecret is created that extracts ALL key/value pairs
+    # from a Vault path into a Kubernetes Secret, and the API pod can `envFrom` it.
+    enabled: false
+    # Target Secret name (if empty, defaults to "<chart-fullname>-api-secrets")
+    name: ""
+    refreshInterval: "30s"
+    clusterSecretStore:
+      name: ""
+      kind: "ClusterSecretStore"
+    # Vault path (remote secret key) to extract from.
+    vaultPath: ""
+  env:
+    # Mount API under /api for path-based ingress
+    HTTP_BASE_PATH: "/api"
+    # Set to "*" or a comma-separated list of allowed UI origins.
+    # With path-based same-origin requests, CORS is typically not needed.
+    CORS_ALLOWED_ORIGINS: "*"
+  resources: {}
+
+ui:
+  image:
+    repository: "LOCATION-docker.pkg.dev/PROJECT/REPO/config-manager-ui"
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    port: 3000
+  resources: {}
+
+database:
+  # Recommended: provide an existing secret containing DATABASE_URL
+  existingSecretName: ""
+  existingSecretKey: "DATABASE_URL"
+
+  # Alternative (recommended with Vault): pass DB_* parts as plain values and
+  # source DB_PASSWORD (and any other secrets) via api.externalSecret + envFrom.
+  parts:
+    host: ""
+    port: 5432
+    name: ""
+    user: ""
+    sslmode: ""
+  # Optional: create a secret from a plaintext URL (not recommended for production)
+  url: ""
+
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  tls:
+    enabled: false
+    secretName: ""

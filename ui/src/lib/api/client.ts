@@ -40,10 +40,29 @@ export async function apiFetch<T>(
   init?: RequestInit,
 ): Promise<T> {
   const baseUrl = getConfigApiBaseUrl();
-  const url =
-    pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")
-      ? pathOrUrl
-      : `${baseUrl}${pathOrUrl}`;
+  const isAbsHttp =
+    pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://");
+  if (isAbsHttp) {
+    return await apiFetchAbsolute<T>(pathOrUrl, init);
+  }
+
+  if (!pathOrUrl.startsWith("/")) {
+    throw new Error("apiFetch expects a path starting with '/'");
+  }
+
+  // Dev-time guard: callers should pass API paths (e.g. `/namespaces`), not
+  // already-prefixed paths (e.g. `/api/namespaces`).
+  if (
+    process.env.NODE_ENV !== "production" &&
+    baseUrl.startsWith("/") &&
+    (pathOrUrl === baseUrl || pathOrUrl.startsWith(`${baseUrl}/`))
+  ) {
+    throw new Error(
+      `apiFetch path must not include baseUrl (${baseUrl}). Pass '/namespaces' not '${pathOrUrl}'.`,
+    );
+  }
+
+  const url = joinBaseAndPath(baseUrl, pathOrUrl);
 
   const res = await fetch(url, {
     cache: "no-store",
@@ -71,6 +90,45 @@ export async function apiFetch<T>(
   }
 
   // Some endpoints may return empty bodies (rare, but be defensive).
+  const text = await res.text();
+  if (!text) {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
+}
+
+function joinBaseAndPath(baseUrl: string, path: string): string {
+  // baseUrl can be absolute (http://...) or relative (/api).
+  const b = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  return b ? `${b}${path}` : path;
+}
+
+async function apiFetchAbsolute<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    cache: "no-store",
+    ...init,
+    headers: {
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  if (!res.ok) {
+    const parsed = await parseApiError(res);
+    throw new HttpError({
+      status: res.status,
+      code: parsed?.code,
+      message: parsed?.message || `API ${res.status} ${res.statusText}`,
+      details:
+        parsed?.details && typeof parsed.details === "object"
+          ? parsed.details
+          : undefined,
+    });
+  }
+
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
   const text = await res.text();
   if (!text) {
     return undefined as T;

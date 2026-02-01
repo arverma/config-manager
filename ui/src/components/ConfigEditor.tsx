@@ -14,11 +14,10 @@ import {
   lineHighlightExtension,
 } from "@/lib/cmDiffHighlight";
 import {
-  buildConfigUrl,
-  buildDeleteConfigUrl,
-  buildDeleteVersionUrl,
-  buildVersionUrl,
-  getConfigApiBaseUrl,
+  buildConfigPath,
+  buildDeleteConfigPath,
+  buildDeleteVersionPath,
+  buildVersionPath,
 } from "@/lib/configApi";
 import { apiFetch, HttpError } from "@/lib/api/client";
 import {
@@ -44,14 +43,11 @@ const CompareModal = dynamic(
 );
 
 export function ConfigEditor(props: {
-  baseUrl: string;
   namespace: string;
   path: string;
   initial?: unknown;
 }) {
-  const baseUrl = props.baseUrl || getConfigApiBaseUrl();
-  const url = buildConfigUrl({
-    baseUrl,
+  const url = buildConfigPath({
     namespace: props.namespace,
     path: props.path,
   });
@@ -75,7 +71,6 @@ export function ConfigEditor(props: {
     }
     return (
       <ConfigEditorInner
-        baseUrl={baseUrl}
         namespace={props.namespace}
         path={props.path}
         initial={latestQuery.data}
@@ -85,7 +80,6 @@ export function ConfigEditor(props: {
 
   return (
     <ConfigEditorInner
-      baseUrl={baseUrl}
       namespace={props.namespace}
       path={props.path}
       initial={props.initial as GetConfigResponse}
@@ -94,14 +88,12 @@ export function ConfigEditor(props: {
 }
 
 function ConfigEditorInner(props: {
-  baseUrl: string;
   namespace: string;
   path: string;
   initial: GetConfigResponse;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const baseUrl = props.baseUrl;
   const namespaceHref = `/configs/${encodeURIComponent(
     props.namespace,
   )}`;
@@ -146,7 +138,6 @@ function ConfigEditorInner(props: {
     try {
       const resp = await queryClient.fetchQuery({
         ...configVersionsQueryOptions({
-          baseUrl,
           namespace: props.namespace,
           path: props.path,
         }),
@@ -165,7 +156,6 @@ function ConfigEditorInner(props: {
   const fetchVersionBodyRaw = async (version: number): Promise<string> => {
     const payload = await queryClient.fetchQuery({
       ...configVersionQueryOptions({
-        baseUrl,
         namespace: props.namespace,
         path: props.path,
         version,
@@ -230,8 +220,7 @@ function ConfigEditorInner(props: {
     setBusy(true);
     setCompareError(null);
     try {
-      const url = buildConfigUrl({
-        baseUrl,
+      const url = buildConfigPath({
         namespace: props.namespace,
         path: props.path,
       });
@@ -295,8 +284,7 @@ function ConfigEditorInner(props: {
     setSaving(true);
     setError(null);
     try {
-      const url = buildConfigUrl({
-        baseUrl,
+      const url = buildConfigPath({
         namespace: props.namespace,
         path: props.path,
       });
@@ -326,8 +314,7 @@ function ConfigEditorInner(props: {
     setSaving(true);
     setError(null);
     try {
-      const url = buildVersionUrl({
-        baseUrl,
+      const url = buildVersionPath({
         namespace: props.namespace,
         path: props.path,
         version,
@@ -359,8 +346,7 @@ function ConfigEditorInner(props: {
     setSaving(true);
     setError(null);
     try {
-      const url = buildConfigUrl({
-        baseUrl,
+      const url = buildConfigPath({
         namespace: props.namespace,
         path: props.path,
       });
@@ -387,8 +373,7 @@ function ConfigEditorInner(props: {
     setSaving(true);
     setError(null);
     try {
-      const url = buildDeleteVersionUrl({
-        baseUrl,
+      const url = buildDeleteVersionPath({
         namespace: props.namespace,
         path: props.path,
         version,
@@ -421,8 +406,7 @@ function ConfigEditorInner(props: {
     setSaving(true);
     setError(null);
     try {
-      const url = buildDeleteConfigUrl({
-        baseUrl,
+      const url = buildDeleteConfigPath({
         namespace: props.namespace,
         path: props.path,
       });

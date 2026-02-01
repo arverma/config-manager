@@ -13,10 +13,9 @@ import {
   useNamespaceBrowse,
   useNamespaces,
 } from "@/lib/api/hooks";
-import { buildDeleteNamespaceUrl } from "@/lib/configApi";
+import { buildDeleteNamespacePath } from "@/lib/configApi";
 
 export function NamespaceBrowserContainer(props: {
-  baseUrl: string;
   namespace: string;
   prefix: string;
 }) {
@@ -24,7 +23,6 @@ export function NamespaceBrowserContainer(props: {
   const queryClient = useQueryClient();
 
   const browseQuery = useNamespaceBrowse({
-    baseUrl: props.baseUrl,
     namespace: props.namespace,
     prefix: props.prefix,
   });
@@ -37,7 +35,6 @@ export function NamespaceBrowserContainer(props: {
   }, [browseQuery.error, router]);
 
   const namespacesQuery = useNamespaces({
-    baseUrl: props.baseUrl,
     limit: 500,
     enabled: props.prefix === "",
     staleTime: 10_000,
@@ -53,11 +50,8 @@ export function NamespaceBrowserContainer(props: {
       if (!canDeleteNamespace) {
         throw new Error("Namespace must be empty to delete.");
       }
-      const url = buildDeleteNamespaceUrl({
-        baseUrl: props.baseUrl,
-        namespace: props.namespace,
-      });
-      await apiFetch<void>(url, { method: "DELETE" });
+      const path = buildDeleteNamespacePath({ namespace: props.namespace });
+      await apiFetch<void>(path, { method: "DELETE" });
     },
     onSuccess: async () => {
       await invalidateNamespaceQueries(queryClient, props.namespace);
@@ -88,7 +82,6 @@ export function NamespaceBrowserContainer(props: {
 
   return (
     <NamespaceBrowserView
-      baseUrl={props.baseUrl}
       namespace={props.namespace}
       prefix={props.prefix}
       browse={browseQuery.data}

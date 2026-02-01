@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+
+bin
+tmp
+coverage
+
+.DS_Store

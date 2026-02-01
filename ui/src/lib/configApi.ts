@@ -1,6 +1,12 @@
 export type ConfigFormat = "json" | "yaml";
 
 export function getConfigApiBaseUrl(): string {
+  // In the browser, prefer same-origin routing. In our packaged deployment,
+  // ingress routes `/api/*` to the API service.
+  if (typeof window !== "undefined") {
+    return "/api";
+  }
+
   // Server-side can read non-public env vars too.
   return (
     process.env.CONFIG_API_BASE_URL ||
@@ -9,69 +15,66 @@ export function getConfigApiBaseUrl(): string {
   );
 }
 
-export function buildConfigUrl(args: {
-  baseUrl: string;
-  namespace: string;
-  path: string;
-}): string {
+function encodePathPreservingSlashes(path: string): string {
+  return path
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+}
+
+export function buildConfigPath(args: { namespace: string; path: string }): string {
   const ns = encodeURIComponent(args.namespace);
-  // `path` is folder-like; keep slashes to mirror REST URL.
-  return `${args.baseUrl}/configs/${ns}/${args.path}`;
+  const p = encodePathPreservingSlashes(args.path);
+  return `/configs/${ns}/${p}`;
 }
 
-export function buildNamespacesUrl(args: { baseUrl: string }): string {
-  return `${args.baseUrl}/namespaces`;
+export function buildNamespacesPath(): string {
+  return "/namespaces";
 }
 
-export function buildNamespaceBrowseUrl(args: {
-  baseUrl: string;
+export function buildNamespaceBrowsePath(args: {
   namespace: string;
   prefix?: string;
 }): string {
   const qp = new URLSearchParams();
   if (args.prefix) qp.set("prefix", args.prefix);
-  return `${args.baseUrl}/namespaces/${encodeURIComponent(args.namespace)}/browse?${qp.toString()}`;
+  const q = qp.toString();
+  return `/namespaces/${encodeURIComponent(args.namespace)}/browse${q ? `?${q}` : ""}`;
 }
 
-export function buildVersionsUrl(args: {
-  baseUrl: string;
-  namespace: string;
-  path: string;
-}): string {
-  return `${args.baseUrl}/configs/${encodeURIComponent(args.namespace)}/${args.path}/versions`;
+export function buildVersionsPath(args: { namespace: string; path: string }): string {
+  const ns = encodeURIComponent(args.namespace);
+  const p = encodePathPreservingSlashes(args.path);
+  return `/configs/${ns}/${p}/versions`;
 }
 
-export function buildVersionUrl(args: {
-  baseUrl: string;
-  namespace: string;
-  path: string;
-  version: number;
-}): string {
-  return `${args.baseUrl}/configs/${encodeURIComponent(args.namespace)}/${args.path}/versions/${args.version}`;
-}
-
-export function buildDeleteVersionUrl(args: {
-  baseUrl: string;
+export function buildVersionPath(args: {
   namespace: string;
   path: string;
   version: number;
 }): string {
-  // Same path as buildVersionUrl, but used with DELETE.
-  return buildVersionUrl(args);
+  const ns = encodeURIComponent(args.namespace);
+  const p = encodePathPreservingSlashes(args.path);
+  return `/configs/${ns}/${p}/versions/${args.version}`;
 }
 
-export function buildDeleteConfigUrl(args: {
-  baseUrl: string;
+export function buildDeleteVersionPath(args: {
+  namespace: string;
+  path: string;
+  version: number;
+}): string {
+  // Same path as buildVersionPath, but used with DELETE.
+  return buildVersionPath(args);
+}
+
+export function buildDeleteConfigPath(args: {
   namespace: string;
   path: string;
 }): string {
-  return `${args.baseUrl}/configs/${encodeURIComponent(args.namespace)}/${args.path}`;
+  return buildConfigPath(args);
 }
 
-export function buildDeleteNamespaceUrl(args: {
-  baseUrl: string;
-  namespace: string;
-}): string {
-  return `${args.baseUrl}/namespaces/${encodeURIComponent(args.namespace)}`;
+export function buildDeleteNamespacePath(args: { namespace: string }): string {
+  return `/namespaces/${encodeURIComponent(args.namespace)}`;
 }
 
