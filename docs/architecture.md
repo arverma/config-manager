@@ -141,15 +141,15 @@ To “promote” an older version, clients should:
 - Load it into the editor
 - Save it as a **new version** (which becomes latest)
 
-## Deletion semantics (hard delete)
+## Deletion semantics
 
-This service uses hard deletes with safety constraints:
+This service uses a mix of hard deletes and safety constraints:
 
 - **Delete a config version**: `DELETE /configs/{namespace}/{path}/versions/{version}`
   - Allowed for non-latest versions only.
   - Attempting to delete the current latest returns **409 Conflict**.
-- **Delete an entire config** (cascades all versions): `DELETE /configs/{namespace}/{path}`
-  - Deletes the `configs` row and all `config_versions` (via `ON DELETE CASCADE`).
+- **Delete an entire config**: `DELETE /configs/{namespace}/{path}`
+  - Hard-deletes the config and its versions.
 - **Delete a namespace**: `DELETE /namespaces/{namespace}`
   - Only allowed when the namespace contains **0 configs**.
   - Otherwise returns **409 Conflict**.

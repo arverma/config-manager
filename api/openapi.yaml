@@ -16,12 +16,56 @@ servers:
   - url: http://localhost:8080
 
 tags:
+  - name: Health
+    description: Health and readiness probes.
   - name: Namespaces
     description: Manage namespaces and browse paths.
   - name: Configs
     description: CRUD and versioning for configs.
 
 paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      operationId: healthz
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Readiness probe
+      description: |
+        Returns 200 only when the service can reach Postgres.
+      operationId: readyz
+      responses:
+        "200":
+          description: Ready.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+        "503":
+          description: Not ready (database unreachable).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /namespaces:
     get:
       tags: [Namespaces]
@@ -153,7 +197,9 @@ paths:
       tags: [Configs]
       summary: Delete a config (hard delete)
       description: |
-        Hard-deletes the config and all its versions for the given namespace/path.
+        Hard-deletes the config for the given namespace/path.
+
+        Deleting a config also deletes its version rows (cascading).
       operationId: deleteConfig
       parameters:
         - $ref: "#/components/parameters/NamespacePath"
@@ -185,6 +231,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GetConfigResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "400":

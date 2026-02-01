@@ -1,4 +1,8 @@
--- Config Manager - initial schema (v1)
+-- Config Manager - schema (pre-deploy)
+--
+-- This repository is pre-deployment, so we keep the database schema as a single file.
+-- When deployments begin and schema changes need to be tracked across environments,
+-- switch to a migration tool (e.g. golang-migrate) and a versioned migrations directory.
 --
 -- Identity model:
 --   A logical config is identified by (namespace, path).
@@ -9,6 +13,9 @@
 -- - This schema assumes Postgres 13+.
 -- - We store both raw text (body_raw) and an optional parsed representation (body_json).
 --   The API layer may choose to always populate body_json (including for YAML by converting to JSON).
+-- - Soft delete (future): configs have deleted_at tombstones, but DELETE /configs hard-deletes for now
+-- - Metadata: namespaces/configs have metadata JSONB for future extensibility
+-- - Audit: config_versions stores request_id/user_agent/source_ip (optional)
 
 BEGIN;
 
@@ -38,6 +45,8 @@ CREATE TABLE IF NOT EXISTS namespaces (
 
   name TEXT NOT NULL,
 
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -63,6 +72,9 @@ CREATE TABLE IF NOT EXISTS configs (
 
   latest_version_id UUID NULL,
 
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  deleted_at TIMESTAMPTZ NULL,
+
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -83,9 +95,6 @@ CREATE TABLE IF NOT EXISTS configs (
   CONSTRAINT configs_path_no_empty_segments CHECK (path !~ '//'),
   CONSTRAINT configs_path_no_parent_segments CHECK (path !~ '(^|/)\\.\\.(\\/|$)'),
   CONSTRAINT configs_path_no_whitespace CHECK (path !~ '[[:space:]]'),
-
-  -- A given (namespace, path) can only have one format.
-  CONSTRAINT configs_identity_unique UNIQUE (namespace, path),
 
   CONSTRAINT configs_namespace_fk
     FOREIGN KEY (namespace) REFERENCES namespaces(name)
@@ -110,6 +119,9 @@ CREATE TABLE IF NOT EXISTS config_versions (
   created_by TEXT NULL,
   comment    TEXT NULL,
   content_sha256 TEXT NULL,
+  request_id TEXT NULL,
+  user_agent TEXT NULL,
+  source_ip  INET NULL,
 
   CONSTRAINT config_versions_version_positive CHECK (version >= 1),
   CONSTRAINT config_versions_unique_per_config UNIQUE (config_id, version)
@@ -166,11 +178,18 @@ FOR EACH ROW
 EXECUTE FUNCTION enforce_latest_version_belongs_to_config();
 
 -- Browse/index helpers (UI listing and prefix filtering)
-CREATE INDEX IF NOT EXISTS configs_browse_idx
-  ON configs (namespace, path);
+CREATE UNIQUE INDEX IF NOT EXISTS configs_identity_active_unique
+  ON configs (namespace, path)
+  WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS configs_browse_active_idx
+  ON configs (namespace, path)
+  WHERE deleted_at IS NULL;
 
 -- Helps `WHERE path LIKE 'prefix%'` queries when namespace is also filtered.
-CREATE INDEX IF NOT EXISTS configs_path_prefix_idx
-  ON configs (namespace, path text_pattern_ops);
+CREATE INDEX IF NOT EXISTS configs_path_prefix_active_idx
+  ON configs (namespace, path text_pattern_ops)
+  WHERE deleted_at IS NULL;
 
 COMMIT;
+

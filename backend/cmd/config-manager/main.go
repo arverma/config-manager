@@ -34,6 +34,10 @@ func main() {
 		Addr:              ":" + port,
 		Handler:           httpapi.NewRouter(pool),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MiB
 	}
 
 	go func() {
@@ -58,4 +62,3 @@ func getenvDefault(key, def string) string {
 	}
 	return v
 }
-

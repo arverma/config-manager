@@ -1,42 +1,40 @@
 # Config Manager
 
-Postgres-backed config registry with immutable versioning; **latest = highest version number**.
+Config Manager is a powerful, open source platform for managing and versioning configuration data at scale. It features a Postgres-backed registry with immutable versioning, a modern web UI for browsing and editing configs with audit history.
 
-## Repo layout
+![Config editor](docs/images/config_editor.png)
 
-- `api/openapi.yaml` - REST API contract (OpenAPI-first; used for future SDK generation)
-- `db/migrations/` - Postgres migrations
-- `docs/architecture.md` - architecture + versioning flows (mermaid diagrams)
-- `backend/` - Go API service (Chi router)
-- `ui/` - Next.js UI (self-serve config management)
+## Screenshots
 
-## Identity model
+<details>
+<summary>Namespace list</summary>
 
-A logical config is uniquely identified by:
+![Namespace list](docs/images/namespace_list.png)
 
-`(namespace, path)`
+</details>
 
-And addressed as:
+<details>
+<summary>Config list</summary>
 
-`/configs/{namespace}/{path}`
+![Config list](docs/images/config_list.png)
 
-Where `format` (`json|yaml`) is an attribute set at create-time (one format per config identity).
+</details>
 
-## Local setup (OS-independent)
+<details>
+<summary>Config editor</summary>
 
-### Prerequisites
+![Config editor](docs/images/config_editor.png)
 
-- **Docker** (for Postgres) + Docker Compose
-- **Go** (for the API)
-- **Node.js + npm** (for the UI)
+</details>
 
-Optional:
+<details>
+<summary>Compare versions</summary>
 
-- `psql` (if you prefer applying schema from your host; otherwise use Docker-based apply below)
+![Compare versions](docs/images/compare_diff_config_versions.png)
 
-### Quickstart (recommended)
+</details>
 
-If you have `make`:
+## Quickstart
 
 ```bash
 make db-up
@@ -52,74 +50,20 @@ make ui-dev
 
 Open the UI at `http://localhost:3000` (API is `http://localhost:8080`).
 
-### Manual setup (no `make`)
+## Docs
 
-1. Start Postgres:
+- `api/openapi.yaml`: API contract (source of truth)
+- `docs/architecture.md`: architecture + versioning model
+- `docs/development.md`: local workflow
+- `docs/deployment.md`: production notes + checklist
+- `docs/environment-variables.md`: all env vars
+- `CONTRIBUTING.md`: contributor workflow and conventions
 
-```bash
-docker compose up -d postgres
-```
+## Common commands
 
-2. Apply schema:
-
-- **Option A (host `psql`)**:
-
-```bash
-PGPASSWORD=postgres psql -h 127.0.0.1 -p 5432 -U postgres -d config_manager -f "db/migrations/001_init.sql"
-```
-
-- **Option B (Docker-only, no host `psql`)**:
-
-```bash
-docker compose cp "db/migrations/001_init.sql" postgres:/tmp/001_init.sql
-docker compose exec -T postgres psql -U postgres -d config_manager -f /tmp/001_init.sql
-```
-
-3. Run the API (default `:8080`):
-
-- macOS/Linux (bash/zsh):
-
-```bash
-cd backend
-export DATABASE_URL="postgres://postgres:postgres@localhost:5432/config_manager?sslmode=disable"
-go run ./cmd/config-manager
-```
-
-- Windows PowerShell:
-
-```powershell
-cd backend
-$env:DATABASE_URL="postgres://postgres:postgres@localhost:5432/config_manager?sslmode=disable"
-go run ./cmd/config-manager
-```
-
-4. Run the UI (default `:3000`):
-
-```bash
-cd ui
-npm install
-cp .env.example .env.local
-npm run dev
-```
-
-### Environment variables
-
-- **API**
-  - `DATABASE_URL` (required)
-  - `PORT` (optional; defaults to `8080`)
-- **UI**
-  - `NEXT_PUBLIC_CONFIG_API_BASE_URL` (recommended)
-  - `CONFIG_API_BASE_URL` (server-side only fallback)
-
-### Handy commands
-
-See `Makefile`:
-
-```bash
-make help
-make smoke
-make check
-make db-reset
-```
+- `make help`: list all targets
+- `make check`: backend tests + UI lint/typecheck
+- `make smoke`: quick API smoke test
+- `make db-reset`: reset local Postgres volume
 
 
