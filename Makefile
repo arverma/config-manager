@@ -24,26 +24,42 @@ API_PORT ?= 8080
 .PHONY: help
 help:
 	@printf "\nTargets:\n"
+	@printf "  dev               Print local dev workflow\n"
 	@printf "  db-up             Start Postgres (docker compose)\n"
 	@printf "  db-down           Stop Postgres\n"
 	@printf "  db-reset          Stop Postgres + delete volume\n"
 	@printf "  db-psql           Open psql shell\n"
-	@printf "  db-apply          Apply db/migrations/001_init.sql\n"
+	@printf "  db-apply          Apply db/schema.sql\n"
 	@printf "  db-drop-schema    Drop + recreate public schema (destructive)\n"
 	@printf "\n"
 	@printf "  api-run           Run Go API (PORT=$(API_PORT))\n"
 	@printf "  api-test          Run Go tests\n"
 	@printf "  api-fmt           gofmt backend files\n"
+	@printf "  api-build         Build backend binary (bin/)\n"
 	@printf "\n"
 	@printf "  ui-install        npm install (ui/)\n"
 	@printf "  ui-dev            Run Next dev server (ui/)\n"
 	@printf "  ui-lint           eslint (ui/)\n"
 	@printf "  ui-typecheck      TypeScript check (ui/)\n"
 	@printf "  ui-check          Lint + typecheck (ui/)\n"
+	@printf "  ui-build          Build UI (Next)\n"
 	@printf "\n"
+	@printf "  fmt               Format backend code\n"
+	@printf "  lint              Lint/typecheck (ui) + vet (api)\n"
+	@printf "  test              Run backend tests\n"
 	@printf "  check             api-test + ui-check\n"
 	@printf "  smoke             Quick API smoke (namespaces/configs/versions)\n"
 	@printf "\n"
+
+.PHONY: dev
+dev:
+	@printf "\nLocal dev:\n\n"
+	@printf "Terminal 1:\n"
+	@printf "  make db-up\n"
+	@printf "  make db-apply\n"
+	@printf "  make api-run\n\n"
+	@printf "Terminal 2:\n"
+	@printf "  make ui-dev\n\n"
 
 .PHONY: db-up
 db-up:
@@ -64,7 +80,7 @@ db-psql:
 
 .PHONY: db-apply
 db-apply:
-	PGPASSWORD=$(DB_PASS) psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME) -f "db/migrations/001_init.sql"
+	PGPASSWORD=$(DB_PASS) psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME) -f "db/schema.sql"
 
 .PHONY: db-drop-schema
 db-drop-schema:
@@ -81,6 +97,11 @@ api-test:
 .PHONY: api-fmt
 api-fmt:
 	cd backend && gofmt -w ./...
+
+.PHONY: api-build
+api-build:
+	@mkdir -p bin
+	cd backend && go build -o ../bin/config-manager ./cmd/config-manager
 
 .PHONY: ui-install
 ui-install:
@@ -101,6 +122,21 @@ ui-typecheck:
 .PHONY: ui-check
 ui-check:
 	cd ui && npm run lint && npx tsc -p tsconfig.json --noEmit
+
+.PHONY: ui-build
+ui-build:
+	cd ui && npm run build
+
+.PHONY: fmt
+fmt: api-fmt
+
+.PHONY: lint
+lint:
+	cd backend && go vet ./...
+	$(MAKE) ui-check
+
+.PHONY: test
+test: api-test
 
 .PHONY: check
 check: api-test ui-check

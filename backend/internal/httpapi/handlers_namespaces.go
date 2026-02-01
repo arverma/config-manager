@@ -1,19 +1,15 @@
 package httpapi
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-var namespaceNameRE = regexp.MustCompile(`^[a-z_]+$`)
 
 func handleListNamespaces(w http.ResponseWriter, req *http.Request, db *pgxpool.Pool) {
 	limit, err := parseLimit(req, 50)
@@ -27,35 +23,10 @@ func handleListNamespaces(w http.ResponseWriter, req *http.Request, db *pgxpool.
 		return
 	}
 
-	rows, err := db.Query(req.Context(), `
-		SELECT
-			n.id, n.name, n.created_at, n.updated_at,
-			COUNT(c.id) AS config_count
-		FROM namespaces n
-		LEFT JOIN configs c
-			ON c.namespace = n.name
-		GROUP BY n.id, n.name, n.created_at, n.updated_at
-		ORDER BY n.name ASC
-		LIMIT $1 OFFSET $2
-	`, limit, offset)
+	items, err := storeListNamespaces(req.Context(), db, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "query failed", nil)
 		return
-	}
-	defer rows.Close()
-
-	items := make([]NamespaceWithCount, 0, limit)
-	for rows.Next() {
-		var id pgtype.UUID
-		var n NamespaceWithCount
-		var count int64
-		if err := rows.Scan(&id, &n.Name, &n.CreatedAt, &n.UpdatedAt, &count); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "scan failed", nil)
-			return
-		}
-		n.ID = uuidToString(id)
-		n.ConfigCount = int(count)
-		items = append(items, n)
 	}
 
 	var next *string
@@ -71,15 +42,11 @@ func handleListNamespaces(w http.ResponseWriter, req *http.Request, db *pgxpool.
 }
 
 func handleCreateNamespace(w http.ResponseWriter, req *http.Request, db *pgxpool.Pool, name string) {
+	if err := validateNamespaceName(name); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error(), map[string]any{"field": "name"})
+		return
+	}
 	name = strings.TrimSpace(name)
-	if name == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "name is required", map[string]any{"field": "name"})
-		return
-	}
-	if !namespaceNameRE.MatchString(name) {
-		writeError(w, http.StatusBadRequest, "bad_request", "name must match ^[a-z_]+$", map[string]any{"field": "name"})
-		return
-	}
 
 	var id pgtype.UUID
 	var createdAt, updatedAt pgtype.Timestamptz
@@ -109,15 +76,11 @@ func handleCreateNamespace(w http.ResponseWriter, req *http.Request, db *pgxpool
 }
 
 func handleDeleteNamespace(w http.ResponseWriter, req *http.Request, db *pgxpool.Pool, namespace string) {
+	if err := validateNamespace(namespace); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
+		return
+	}
 	namespace = strings.TrimSpace(namespace)
-	if namespace == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "namespace is required", nil)
-		return
-	}
-	if !namespaceNameRE.MatchString(namespace) {
-		writeError(w, http.StatusBadRequest, "bad_request", "namespace must match ^[a-z_]+$", nil)
-		return
-	}
 
 	tx, err := db.Begin(req.Context())
 	if err != nil {
@@ -126,15 +89,15 @@ func handleDeleteNamespace(w http.ResponseWriter, req *http.Request, db *pgxpool
 	}
 	defer tx.Rollback(req.Context())
 
-	// Ensure namespace exists and lock it.
-	var exists bool
+	// Ensure namespace exists and lock it, to block concurrent inserts via FK.
+	var dummy int
 	if err := tx.QueryRow(req.Context(), `
-		SELECT EXISTS(SELECT 1 FROM namespaces WHERE name = $1)
-	`, namespace).Scan(&exists); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "query failed", nil)
-		return
-	}
-	if !exists {
+		SELECT 1 FROM namespaces WHERE name = $1 FOR UPDATE
+	`, namespace).Scan(&dummy); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "namespace not found", nil)
+			return
+		}
 		writeError(w, http.StatusNotFound, "not_found", "namespace not found", nil)
 		return
 	}
@@ -142,7 +105,7 @@ func handleDeleteNamespace(w http.ResponseWriter, req *http.Request, db *pgxpool
 	// Count configs in namespace.
 	var cnt int64
 	if err := tx.QueryRow(req.Context(), `
-		SELECT COUNT(*) FROM configs WHERE namespace = $1
+		SELECT COUNT(*) FROM configs WHERE namespace = $1 AND deleted_at IS NULL
 	`, namespace).Scan(&cnt); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "query failed", nil)
 		return
@@ -152,10 +115,18 @@ func handleDeleteNamespace(w http.ResponseWriter, req *http.Request, db *pgxpool
 		return
 	}
 
-	// Delete namespace. (If a race inserts a config, FK will block; treat as conflict.)
+	// Cleanup any historical tombstones before deleting namespace.
+	// (We only allow namespace deletion when there are 0 active configs.)
+	if _, err := tx.Exec(req.Context(), `DELETE FROM configs WHERE namespace = $1`, namespace); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "delete failed", nil)
+		return
+	}
+
+	// Hard delete namespace (only allowed when it has 0 active configs).
 	cmd, err := tx.Exec(req.Context(), `DELETE FROM namespaces WHERE name = $1`, namespace)
 	if err != nil {
 		var pgErr *pgconn.PgError
+		// If a race inserts a config, FK will block; treat as conflict.
 		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
 			writeError(w, http.StatusConflict, "conflict", "namespace is not empty", nil)
 			return
@@ -176,14 +147,19 @@ func handleDeleteNamespace(w http.ResponseWriter, req *http.Request, db *pgxpool
 }
 
 func handleBrowseNamespace(w http.ResponseWriter, req *http.Request, db *pgxpool.Pool, namespace string) {
-	namespace = strings.TrimSpace(namespace)
-	if namespace == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "namespace is required", nil)
+	if err := validateNamespace(namespace); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return
 	}
+	namespace = strings.TrimSpace(namespace)
 
 	// Ensure namespace exists.
-	if !namespaceExists(req.Context(), db, namespace) {
+	ok, err := storeNamespaceExists(req.Context(), db, namespace)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "query failed", nil)
+		return
+	}
+	if !ok {
 		writeError(w, http.StatusNotFound, "not_found", "namespace not found", nil)
 		return
 	}
@@ -193,7 +169,7 @@ func handleBrowseNamespace(w http.ResponseWriter, req *http.Request, db *pgxpool
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return
 	}
-	limit, err := parseLimit(req, 200)
+	limit, err := parseLimit(req, 50)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return
@@ -222,6 +198,7 @@ func handleBrowseNamespace(w http.ResponseWriter, req *http.Request, db *pgxpool
 			) lv ON true
 			WHERE c.namespace = $1
 			  AND ($2 = '' OR c.path LIKE $2 || '%')
+			  AND c.deleted_at IS NULL
 		),
 		agg AS (
 			SELECT
@@ -245,6 +222,7 @@ func handleBrowseNamespace(w http.ResponseWriter, req *http.Request, db *pgxpool
 	defer rows.Close()
 
 	entries := make([]any, 0, limit)
+	rowCount := 0
 	for rows.Next() {
 		var child string
 		var hasFolder, hasConfig bool
@@ -254,6 +232,7 @@ func handleBrowseNamespace(w http.ResponseWriter, req *http.Request, db *pgxpool
 			writeError(w, http.StatusInternalServerError, "internal_error", "scan failed", nil)
 			return
 		}
+		rowCount++
 		if child == "" {
 			continue
 		}
@@ -283,7 +262,7 @@ func handleBrowseNamespace(w http.ResponseWriter, req *http.Request, db *pgxpool
 	}
 
 	var next *string
-	if len(entries) >= limit {
+	if rowCount == limit {
 		c := encodeCursorOffset(offset + limit)
 		next = &c
 	}
@@ -292,17 +271,4 @@ func handleBrowseNamespace(w http.ResponseWriter, req *http.Request, db *pgxpool
 		Items:      entries,
 		NextCursor: next,
 	})
-}
-
-func namespaceExists(ctx context.Context, db *pgxpool.Pool, name string) bool {
-	var ok bool
-	_ = db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM namespaces WHERE name = $1)`, name).Scan(&ok)
-	return ok
-}
-
-func uuidToString(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
-	return u.String()
 }

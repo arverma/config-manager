@@ -1,29 +1,19 @@
 "use client";
 
-import CodeMirror from "@uiw/react-codemirror";
 import { json as jsonLang } from "@codemirror/lang-json";
 import { yaml as yamlLang } from "@codemirror/lang-yaml";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import type { ConfigFormat } from "@/lib/configApi";
 import { buildConfigUrl, getConfigApiBaseUrl } from "@/lib/configApi";
-
-function defaultBody(format: ConfigFormat): string {
-  return format === "json" ? "{\n  \n}\n" : "key: value\n";
-}
-
-function prettify(format: ConfigFormat, raw: string): string {
-  if (format !== "json") return raw;
-  try {
-    const obj = JSON.parse(raw);
-    return JSON.stringify(obj, null, 2) + "\n";
-  } catch {
-    return raw;
-  }
-}
+import { apiFetch, HttpError } from "@/lib/api/client";
+import { invalidateConfigQueries } from "@/lib/api/hooks";
+import { defaultConfigBody, prettify } from "@/lib/utils/prettify";
+import { CodeEditor } from "@/components/shared/CodeEditor";
 
 export function CreateConfigEditor(props: {
   baseUrl: string;
@@ -33,14 +23,13 @@ export function CreateConfigEditor(props: {
 }) {
   const router = useRouter();
   const baseUrl = props.baseUrl || getConfigApiBaseUrl();
+  const queryClient = useQueryClient();
   const namespaceHref = `/configs/${encodeURIComponent(props.namespace)}`;
 
   const [format, setFormat] = useState<ConfigFormat>(props.initialFormat);
   const [editorValue, setEditorValue] = useState<string>(() =>
-    prettify(props.initialFormat, defaultBody(props.initialFormat)),
+    prettify(props.initialFormat, defaultConfigBody(props.initialFormat)),
   );
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const extensions = useMemo(() => {
     return [format === "json" ? jsonLang() : yamlLang()];
@@ -54,38 +43,24 @@ export function CreateConfigEditor(props: {
     });
   }, [baseUrl, props.namespace, props.path]);
 
-  const create = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch(url, {
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      await apiFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ format, body_raw: editorValue }),
       });
-      if (!res.ok) {
-        const text = await res.text();
-        if (res.status === 409) {
-          setError("Config already exists. Open the existing config instead.");
-          return;
-        }
-        setError(`API ${res.status}: ${text || res.statusText}`);
-        return;
-      }
-
-      // Switch to normal view mode (server will render ConfigEditor).
+    },
+    onSuccess: async () => {
+      await invalidateConfigQueries(queryClient, props.namespace, props.path);
       router.replace(
         `/configs/${encodeURIComponent(props.namespace)}/${encodeURI(
           props.path,
         )}`,
       );
       router.refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unknown error");
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+  });
 
   const openExisting = () => {
     router.replace(
@@ -119,9 +94,9 @@ export function CreateConfigEditor(props: {
               onChange={(e) => {
                 const next = e.target.value as ConfigFormat;
                 setFormat(next);
-                setEditorValue(prettify(next, defaultBody(next)));
+                setEditorValue(prettify(next, defaultConfigBody(next)));
               }}
-              disabled={saving}
+              disabled={createMutation.isPending}
             >
               <option value="yaml">yaml</option>
               <option value="json">json</option>
@@ -130,16 +105,24 @@ export function CreateConfigEditor(props: {
         </div>
       </header>
 
-      {error ? (
+      {createMutation.error ? (
         <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-600 dark:text-red-400">
-          <div>{error}</div>
-          {error.includes("already exists") ? (
+          <div>
+            {createMutation.error instanceof HttpError &&
+            createMutation.error.status === 409
+              ? "Config already exists. Open the existing config instead."
+              : createMutation.error instanceof Error
+                ? createMutation.error.message
+                : "Unknown error"}
+          </div>
+          {createMutation.error instanceof HttpError &&
+          createMutation.error.status === 409 ? (
             <div className="mt-2">
               <button
                 type="button"
                 className="h-9 rounded-lg border border-black/[.08] px-3 text-sm hover:bg-zinc-950/[.03] dark:border-white/[.145] dark:hover:bg-white/[.04]"
                 onClick={openExisting}
-                disabled={saving}
+                disabled={createMutation.isPending}
               >
                 Open existing
               </button>
@@ -154,15 +137,15 @@ export function CreateConfigEditor(props: {
           <button
             type="button"
             className="h-9 rounded-lg bg-zinc-900 px-3 text-sm font-medium text-zinc-50 hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            onClick={create}
-            disabled={saving}
+            onClick={() => createMutation.mutate()}
+            disabled={createMutation.isPending}
           >
-            {saving ? "Creating..." : "Create config (v1)"}
+            {createMutation.isPending ? "Creating..." : "Create config (v1)"}
           </button>
         </div>
 
         <div className="overflow-hidden rounded-lg border border-black/[.08] dark:border-white/[.145]">
-          <CodeMirror
+          <CodeEditor
             value={editorValue}
             height="420px"
             extensions={extensions}

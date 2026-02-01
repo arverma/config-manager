@@ -1,28 +1,23 @@
 package httpapi
 
 import (
-	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"gopkg.in/yaml.v3"
 )
 
-var namespacePathRE = regexp.MustCompile(`^[a-z_]+$`)
+const (
+	maxConfigBodyBytes = int64(5 << 20) // 5 MiB
+)
 
 func handleListConfigs(w http.ResponseWriter, req *http.Request, db *pgxpool.Pool) {
 	limit, err := parseLimit(req, 50)
@@ -50,24 +45,49 @@ func handleListConfigs(w http.ResponseWriter, req *http.Request, db *pgxpool.Poo
 		recursive = true
 	}
 
-	// Basic list. Vault-like browsing is handled by /namespaces/{namespace}/browse.
-	rows, err := db.Query(req.Context(), `
-		SELECT
-			c.id, c.namespace, c.path, c.format::text, c.created_at, c.updated_at,
-			lv.id, lv.version, lv.created_at, lv.created_by, lv.comment, lv.content_sha256
-		FROM configs c
-		LEFT JOIN LATERAL (
-			SELECT id, version, created_at, created_by, comment, content_sha256
-			FROM config_versions
-			WHERE config_id = c.id
-			ORDER BY version DESC
-			LIMIT 1
-		) lv ON true
-		WHERE ($1 = '' OR c.namespace = $1)
-		  AND ($2 = '' OR c.path LIKE $2 || '%')
-		ORDER BY c.namespace ASC, c.path ASC
-		LIMIT $3 OFFSET $4
-	`, namespace, prefix, limit, offset)
+	// Basic list. Vault-like folder browsing is handled by /namespaces/{namespace}/browse.
+	var rows pgx.Rows
+	if recursive {
+		rows, err = db.Query(req.Context(), `
+			SELECT
+				c.id, c.namespace, c.path, c.format::text, c.created_at, c.updated_at,
+				lv.id, lv.version, lv.created_at, lv.created_by, lv.comment, lv.content_sha256
+			FROM configs c
+			LEFT JOIN LATERAL (
+				SELECT id, version, created_at, created_by, comment, content_sha256
+				FROM config_versions
+				WHERE config_id = c.id
+				ORDER BY version DESC
+				LIMIT 1
+			) lv ON true
+			WHERE ($1 = '' OR c.namespace = $1)
+			  AND ($2 = '' OR c.path LIKE $2 || '%')
+			  AND c.deleted_at IS NULL
+			ORDER BY c.namespace ASC, c.path ASC
+			LIMIT $3 OFFSET $4
+		`, namespace, prefix, limit, offset)
+	} else {
+		startIndex := len(prefix) + 1 // SQL substr is 1-based
+		rows, err = db.Query(req.Context(), `
+			SELECT
+				c.id, c.namespace, c.path, c.format::text, c.created_at, c.updated_at,
+				lv.id, lv.version, lv.created_at, lv.created_by, lv.comment, lv.content_sha256
+			FROM configs c
+			LEFT JOIN LATERAL (
+				SELECT id, version, created_at, created_by, comment, content_sha256
+				FROM config_versions
+				WHERE config_id = c.id
+				ORDER BY version DESC
+				LIMIT 1
+			) lv ON true
+			WHERE ($1 = '' OR c.namespace = $1)
+			  AND ($2 = '' OR c.path LIKE $2 || '%')
+			  AND c.deleted_at IS NULL
+			  AND position('/' in substr(c.path, $3)) = 0
+			ORDER BY c.namespace ASC, c.path ASC
+			LIMIT $4 OFFSET $5
+		`, namespace, prefix, startIndex, limit, offset)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "query failed", nil)
 		return
@@ -112,22 +132,6 @@ func handleListConfigs(w http.ResponseWriter, req *http.Request, db *pgxpool.Poo
 		next = &c
 	}
 
-	// If recursive=false, filter to immediate children (best-effort).
-	if !recursive && prefix != "" {
-		filtered := make([]ConfigListItem, 0, len(items))
-		for _, it := range items {
-			rest := strings.TrimPrefix(it.Config.Path, prefix)
-			if rest == it.Config.Path {
-				continue
-			}
-			if strings.Contains(rest, "/") {
-				continue
-			}
-			filtered = append(filtered, it)
-		}
-		items = filtered
-	}
-
 	writeJSON(w, http.StatusOK, ConfigListResponse{Items: items, NextCursor: next})
 }
 
@@ -137,7 +141,7 @@ func handleGetLatestConfig(w http.ResponseWriter, req *http.Request, db *pgxpool
 		return
 	}
 
-	cfg, ver, err := getConfigAndLatest(req.Context(), db, namespace, path)
+	cfg, ver, err := storeGetConfigAndLatest(req.Context(), db, namespace, path)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "config not found", nil)
 		return
@@ -162,8 +166,8 @@ func handleCreateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		Comment   *string      `json:"comment"`
 		CreatedBy *string      `json:"created_by"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid json body", nil)
+	if err := decodeJSONBody(w, req, &body, maxConfigBodyBytes); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return
 	}
 	if body.BodyRaw == "" {
@@ -181,6 +185,17 @@ func handleCreateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		return
 	}
 	sha := sha256Hex(body.BodyRaw)
+	reqID, userAgent, sourceIP := requestAuditFields(req)
+
+	nsOK, err := storeNamespaceExists(req.Context(), db, namespace)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "query failed", nil)
+		return
+	}
+	if !nsOK {
+		writeError(w, http.StatusNotFound, "not_found", "namespace not found", nil)
+		return
+	}
 
 	tx, err := db.BeginTx(req.Context(), pgx.TxOptions{})
 	if err != nil {
@@ -218,10 +233,10 @@ func handleCreateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 	// Insert version 1
 	var versionCreatedAt pgtype.Timestamptz
 	err = tx.QueryRow(req.Context(), `
-		INSERT INTO config_versions (config_id, version, body_raw, body_json, created_by, comment, content_sha256)
-		VALUES ($1, 1, $2, $3, $4, $5, $6)
+		INSERT INTO config_versions (config_id, version, body_raw, body_json, created_by, comment, content_sha256, request_id, user_agent, source_ip)
+		VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, created_at
-	`, cfgID, body.BodyRaw, json.RawMessage(parsedJSON), body.CreatedBy, body.Comment, sha).Scan(&latestVersionID, &versionCreatedAt)
+	`, cfgID, body.BodyRaw, json.RawMessage(parsedJSON), body.CreatedBy, body.Comment, sha, reqID, userAgent, sourceIP).Scan(&latestVersionID, &versionCreatedAt)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "insert version failed", nil)
 		return
@@ -273,8 +288,8 @@ func handleUpdateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		CreatedBy   *string `json:"created_by"`
 		BaseVersion *int    `json:"base_version"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid json body", nil)
+	if err := decodeJSONBody(w, req, &body, maxConfigBodyBytes); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return
 	}
 	if body.BodyRaw == "" {
@@ -297,6 +312,7 @@ func handleUpdateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		SELECT c.id, c.namespace, c.path, c.format::text, c.latest_version_id, c.created_at, c.updated_at
 		FROM configs c
 		WHERE c.namespace = $1 AND c.path = $2
+		  AND c.deleted_at IS NULL
 		FOR UPDATE
 	`, namespace, path).Scan(&cfgID, &cfg.Namespace, &cfg.Path, &fmtStr, &latestVersionID, &cfg.CreatedAt, &cfg.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -365,15 +381,16 @@ func handleUpdateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return
 	}
+	reqID, userAgent, sourceIP := requestAuditFields(req)
 
 	nextVersion := currentLatestNumber + 1
 	var newVerID pgtype.UUID
 	var createdAt pgtype.Timestamptz
 	err = tx.QueryRow(req.Context(), `
-		INSERT INTO config_versions (config_id, version, body_raw, body_json, created_by, comment, content_sha256)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO config_versions (config_id, version, body_raw, body_json, created_by, comment, content_sha256, request_id, user_agent, source_ip)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at
-	`, cfgID, nextVersion, body.BodyRaw, json.RawMessage(parsedJSON), body.CreatedBy, body.Comment, sha).Scan(&newVerID, &createdAt)
+	`, cfgID, nextVersion, body.BodyRaw, json.RawMessage(parsedJSON), body.CreatedBy, body.Comment, sha, reqID, userAgent, sourceIP).Scan(&newVerID, &createdAt)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "insert version failed", nil)
 		return
@@ -419,7 +436,7 @@ func handleListConfigVersions(w http.ResponseWriter, req *http.Request, db *pgxp
 		return
 	}
 
-	cfg, cfgID, err := getConfigOnly(req.Context(), db, namespace, path)
+	_, cfgID, err := storeGetConfigOnly(req.Context(), db, namespace, path)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "config not found", nil)
 		return
@@ -444,22 +461,10 @@ func handleListConfigVersions(w http.ResponseWriter, req *http.Request, db *pgxp
 
 	items := make([]ConfigVersionMeta, 0, limit)
 	for rows.Next() {
-		var id pgtype.UUID
-		var m ConfigVersionMeta
-		var createdBy, comment, contentSHA sql.NullString
-		if err := rows.Scan(&id, &m.Version, &m.CreatedAt, &createdBy, &comment, &contentSHA); err != nil {
+		m, err := scanConfigVersionMeta(rows)
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "scan failed", nil)
 			return
-		}
-		m.ID = uuidToString(id)
-		if createdBy.Valid {
-			m.CreatedBy = &createdBy.String
-		}
-		if comment.Valid {
-			m.Comment = &comment.String
-		}
-		if contentSHA.Valid {
-			m.ContentSHA256 = &contentSHA.String
 		}
 		items = append(items, m)
 	}
@@ -470,7 +475,6 @@ func handleListConfigVersions(w http.ResponseWriter, req *http.Request, db *pgxp
 		next = &c
 	}
 	writeJSON(w, http.StatusOK, VersionListResponse{Items: items, NextCursor: next})
-	_ = cfg // reserved for potential future expansions
 }
 
 func handleGetConfigVersion(w http.ResponseWriter, req *http.Request, db *pgxpool.Pool) {
@@ -481,7 +485,7 @@ func handleGetConfigVersion(w http.ResponseWriter, req *http.Request, db *pgxpoo
 	verNumStr := chi.URLParam(req, "version")
 	verNum, _ := strconv.Atoi(verNumStr)
 
-	cfg, cfgID, err := getConfigOnly(req.Context(), db, namespace, path)
+	cfg, cfgID, err := storeGetConfigOnly(req.Context(), db, namespace, path)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "config not found", nil)
 		return
@@ -491,7 +495,7 @@ func handleGetConfigVersion(w http.ResponseWriter, req *http.Request, db *pgxpoo
 		return
 	}
 
-	ver, err := getVersion(req.Context(), db, cfgID, verNum)
+	ver, err := storeGetVersion(req.Context(), db, cfgID, verNum)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "version not found", nil)
 		return
@@ -502,7 +506,7 @@ func handleGetConfigVersion(w http.ResponseWriter, req *http.Request, db *pgxpoo
 	}
 
 	// Derive latest pointer as max(version) for this config.
-	latest, err := getLatestVersion(req.Context(), db, cfgID)
+	latest, err := storeGetLatestVersion(req.Context(), db, cfgID)
 	if err == nil {
 		cfg.LatestVersionID = ptr(latest.ID)
 	}
@@ -531,6 +535,7 @@ func handleDeleteConfigVersion(w http.ResponseWriter, req *http.Request, db *pgx
 		SELECT id
 		FROM configs
 		WHERE namespace = $1 AND path = $2
+		  AND deleted_at IS NULL
 		FOR UPDATE
 	`, namespace, path).Scan(&cfgID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -593,6 +598,7 @@ func handleDeleteConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		SELECT id
 		FROM configs
 		WHERE namespace = $1 AND path = $2
+		  AND deleted_at IS NULL
 		FOR UPDATE
 	`, namespace, path).Scan(&cfgID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -604,10 +610,13 @@ func handleDeleteConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		return
 	}
 
-	// Delete config; versions cascade via FK (ON DELETE CASCADE).
-	_, err = tx.Exec(req.Context(), `DELETE FROM configs WHERE id = $1`, cfgID)
+	tag, err := tx.Exec(req.Context(), `DELETE FROM configs WHERE id = $1`, cfgID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "delete failed", nil)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "not_found", "config not found", nil)
 		return
 	}
 
@@ -621,228 +630,16 @@ func handleDeleteConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 
 func getNamespaceAndPath(w http.ResponseWriter, req *http.Request) (string, string, bool) {
 	namespace := strings.TrimSpace(chi.URLParam(req, "namespace"))
-	path := strings.TrimSpace(chi.URLParam(req, "path"))
-	if namespace == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "namespace is required", nil)
+	if err := validateNamespace(namespace); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return "", "", false
 	}
-	if !namespacePathRE.MatchString(namespace) {
-		writeError(w, http.StatusBadRequest, "bad_request", "namespace must match ^[a-z_]+$", nil)
+	namespace = strings.TrimSpace(namespace)
+
+	path, err := normalizeConfigPath(chi.URLParam(req, "path"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return "", "", false
-	}
-	if path == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "path is required", nil)
-		return "", "", false
-	}
-	path = strings.TrimPrefix(path, "/")
-	path = strings.TrimSuffix(path, "/")
-	if strings.Contains(path, "..") {
-		writeError(w, http.StatusBadRequest, "bad_request", "path must not contain '..'", nil)
-		return "", "", false
-	}
-	for _, r := range path {
-		if unicode.IsSpace(r) {
-			writeError(w, http.StatusBadRequest, "bad_request", "path must not contain whitespace", nil)
-			return "", "", false
-		}
 	}
 	return namespace, path, true
 }
-
-func getConfigOnly(ctx context.Context, db *pgxpool.Pool, namespace, path string) (Config, pgtype.UUID, error) {
-	var cfgID pgtype.UUID
-	var cfg Config
-	var fmtStr string
-	err := db.QueryRow(ctx, `
-		SELECT id, namespace, path, format::text, created_at, updated_at
-		FROM configs
-		WHERE namespace = $1 AND path = $2
-	`, namespace, path).Scan(&cfgID, &cfg.Namespace, &cfg.Path, &fmtStr, &cfg.CreatedAt, &cfg.UpdatedAt)
-	if err != nil {
-		return Config{}, pgtype.UUID{}, err
-	}
-	cfg.ID = uuidToString(cfgID)
-	cfg.Format = ConfigFormat(fmtStr)
-	return cfg, cfgID, nil
-}
-
-func getConfigAndLatest(ctx context.Context, db *pgxpool.Pool, namespace, path string) (Config, ConfigVersion, error) {
-	var cfgID pgtype.UUID
-	var cfg Config
-	var fmtStr string
-	err := db.QueryRow(ctx, `
-		SELECT id, namespace, path, format::text, created_at, updated_at
-		FROM configs
-		WHERE namespace = $1 AND path = $2
-	`, namespace, path).Scan(&cfgID, &cfg.Namespace, &cfg.Path, &fmtStr, &cfg.CreatedAt, &cfg.UpdatedAt)
-	if err != nil {
-		return Config{}, ConfigVersion{}, err
-	}
-	cfg.ID = uuidToString(cfgID)
-	cfg.Format = ConfigFormat(fmtStr)
-	ver, err := getLatestVersion(ctx, db, cfgID)
-	if err != nil {
-		return Config{}, ConfigVersion{}, err
-	}
-	cfg.LatestVersionID = ptr(ver.ID)
-	return cfg, ver, nil
-}
-
-func getLatestVersion(ctx context.Context, db *pgxpool.Pool, cfgID pgtype.UUID) (ConfigVersion, error) {
-	var verID pgtype.UUID
-	var v ConfigVersion
-	var bodyJSON []byte
-	var createdBy, comment, contentSHA sql.NullString
-	err := db.QueryRow(ctx, `
-		SELECT id, version, created_at, created_by, comment, content_sha256, body_raw, body_json
-		FROM config_versions
-		WHERE config_id = $1
-		ORDER BY version DESC
-		LIMIT 1
-	`, cfgID).Scan(&verID, &v.Version, &v.CreatedAt, &createdBy, &comment, &contentSHA, &v.BodyRaw, &bodyJSON)
-	if err != nil {
-		return ConfigVersion{}, err
-	}
-	v.ID = uuidToString(verID)
-	if createdBy.Valid {
-		v.CreatedBy = &createdBy.String
-	}
-	if comment.Valid {
-		v.Comment = &comment.String
-	}
-	if contentSHA.Valid {
-		v.ContentSHA256 = &contentSHA.String
-	}
-	if bodyJSON != nil {
-		var anyVal any
-		_ = json.Unmarshal(bodyJSON, &anyVal)
-		v.BodyJSON = anyVal
-	}
-	return v, nil
-}
-
-func getVersion(ctx context.Context, db *pgxpool.Pool, cfgID pgtype.UUID, version int) (ConfigVersion, error) {
-	var verID pgtype.UUID
-	var v ConfigVersion
-	var bodyJSON []byte
-	var createdBy, comment, contentSHA sql.NullString
-	err := db.QueryRow(ctx, `
-		SELECT id, version, created_at, created_by, comment, content_sha256, body_raw, body_json
-		FROM config_versions
-		WHERE config_id = $1 AND version = $2
-	`, cfgID, version).Scan(&verID, &v.Version, &v.CreatedAt, &createdBy, &comment, &contentSHA, &v.BodyRaw, &bodyJSON)
-	if err != nil {
-		return ConfigVersion{}, err
-	}
-	v.ID = uuidToString(verID)
-	if createdBy.Valid {
-		v.CreatedBy = &createdBy.String
-	}
-	if comment.Valid {
-		v.Comment = &comment.String
-	}
-	if contentSHA.Valid {
-		v.ContentSHA256 = &contentSHA.String
-	}
-	if bodyJSON != nil {
-		var anyVal any
-		_ = json.Unmarshal(bodyJSON, &anyVal)
-		v.BodyJSON = anyVal
-	}
-	return v, nil
-}
-
-func getVersionByID(ctx context.Context, db *pgxpool.Pool, id pgtype.UUID) (ConfigVersion, error) {
-	var verID pgtype.UUID
-	var v ConfigVersion
-	var bodyJSON []byte
-	var createdBy, comment, contentSHA sql.NullString
-	err := db.QueryRow(ctx, `
-		SELECT id, version, created_at, created_by, comment, content_sha256, body_raw, body_json
-		FROM config_versions
-		WHERE id = $1
-	`, id).Scan(&verID, &v.Version, &v.CreatedAt, &createdBy, &comment, &contentSHA, &v.BodyRaw, &bodyJSON)
-	if err != nil {
-		return ConfigVersion{}, err
-	}
-	v.ID = uuidToString(verID)
-	if createdBy.Valid {
-		v.CreatedBy = &createdBy.String
-	}
-	if comment.Valid {
-		v.Comment = &comment.String
-	}
-	if contentSHA.Valid {
-		v.ContentSHA256 = &contentSHA.String
-	}
-	if bodyJSON != nil {
-		var anyVal any
-		_ = json.Unmarshal(bodyJSON, &anyVal)
-		v.BodyJSON = anyVal
-	}
-	return v, nil
-}
-
-func parseBody(format ConfigFormat, raw string) (any, []byte, error) {
-	switch format {
-	case FormatJSON:
-		var anyVal any
-		dec := json.NewDecoder(strings.NewReader(raw))
-		dec.UseNumber()
-		if err := dec.Decode(&anyVal); err != nil {
-			return nil, nil, errors.New("invalid json")
-		}
-		// ensure no trailing tokens
-		if err := dec.Decode(&struct{}{}); err != io.EOF {
-			return nil, nil, errors.New("invalid json")
-		}
-		j, _ := json.Marshal(anyVal)
-		return anyVal, j, nil
-	case FormatYAML:
-		var anyVal any
-		if err := yaml.Unmarshal([]byte(raw), &anyVal); err != nil {
-			return nil, nil, errors.New("invalid yaml")
-		}
-		normalized := normalizeYAML(anyVal)
-		j, _ := json.Marshal(normalized)
-		return normalized, j, nil
-	default:
-		return nil, nil, errors.New("unknown format")
-	}
-}
-
-func normalizeYAML(v any) any {
-	switch t := v.(type) {
-	case map[any]any:
-		m := make(map[string]any, len(t))
-		for k, vv := range t {
-			m[asString(k)] = normalizeYAML(vv)
-		}
-		return m
-	case []any:
-		out := make([]any, len(t))
-		for i := range t {
-			out[i] = normalizeYAML(t[i])
-		}
-		return out
-	default:
-		return t
-	}
-}
-
-func asString(v any) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	default:
-		b, _ := json.Marshal(t)
-		return string(b)
-	}
-}
-
-func sha256Hex(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:])
-}
-
-func ptr[T any](v T) *T { return &v }

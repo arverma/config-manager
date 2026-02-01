@@ -1,14 +1,14 @@
 "use client";
 
-import CodeMirror from "@uiw/react-codemirror";
 import { json as jsonLang } from "@codemirror/lang-json";
 import { yaml as yamlLang } from "@codemirror/lang-yaml";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import dynamic from "next/dynamic";
 
-import type { ConfigFormat } from "@/lib/configApi";
 import {
   computeChangedLineNumbers,
   lineHighlightExtension,
@@ -18,69 +18,96 @@ import {
   buildDeleteConfigUrl,
   buildDeleteVersionUrl,
   buildVersionUrl,
-  buildVersionsUrl,
   getConfigApiBaseUrl,
 } from "@/lib/configApi";
+import { apiFetch, HttpError } from "@/lib/api/client";
+import {
+  configVersionQueryOptions,
+  configVersionsQueryOptions,
+  invalidateConfigQueries,
+  invalidateNamespaceQueries,
+} from "@/lib/api/hooks";
+import { queryKeys } from "@/lib/api/keys";
+import type {
+  ConfigVersionMeta,
+  GetConfigResponse,
+  GetVersionResponse,
+} from "@/lib/api/types";
+import { prettify } from "@/lib/utils/prettify";
+import { CodeEditor } from "@/components/shared/CodeEditor";
+import { ApiErrorBanner } from "@/components/shared/ApiErrorBanner";
+import { LoadingState } from "@/components/shared/LoadingState";
 
-type GetConfigResponse = {
-  config: {
-    id: string;
-    namespace: string;
-    path: string;
-    format: ConfigFormat;
-    latest_version_id?: string;
-    created_at: string;
-    updated_at: string;
-  };
-  latest: {
-    id: string;
-    version: number;
-    created_at: string;
-    created_by?: string;
-    comment?: string;
-    content_sha256?: string;
-    body_raw: string;
-    body_json?: unknown;
-  };
-};
-
-type VersionMeta = {
-  id: string;
-  version: number;
-  created_at: string;
-  created_by?: string;
-  comment?: string;
-  content_sha256?: string;
-};
-
-type GetVersionResponse = {
-  config: GetConfigResponse["config"];
-  version: {
-    id: string;
-    version: number;
-    created_at: string;
-    created_by?: string;
-    comment?: string;
-    content_sha256?: string;
-    body_raw: string;
-    body_json?: unknown;
-  };
-};
+const CompareModal = dynamic(
+  () => import("@/components/configs/CompareModal").then((m) => m.CompareModal),
+  { ssr: false },
+);
 
 export function ConfigEditor(props: {
   baseUrl: string;
   namespace: string;
   path: string;
-  initial: unknown;
+  initial?: unknown;
+}) {
+  const baseUrl = props.baseUrl || getConfigApiBaseUrl();
+  const url = buildConfigUrl({
+    baseUrl,
+    namespace: props.namespace,
+    path: props.path,
+  });
+
+  const hasInitial = props.initial !== undefined && props.initial !== null;
+  const latestQuery = useQuery({
+    queryKey: queryKeys.configLatest(props.namespace, props.path),
+    queryFn: async () => apiFetch<GetConfigResponse>(url),
+    enabled: !hasInitial,
+  });
+
+  if (!hasInitial) {
+    if (latestQuery.isLoading) {
+      return <LoadingState label="Loading config..." />;
+    }
+    if (latestQuery.error) {
+      return <ApiErrorBanner title="API error" error={latestQuery.error} />;
+    }
+    if (!latestQuery.data) {
+      return <LoadingState label="Loading config..." />;
+    }
+    return (
+      <ConfigEditorInner
+        baseUrl={baseUrl}
+        namespace={props.namespace}
+        path={props.path}
+        initial={latestQuery.data}
+      />
+    );
+  }
+
+  return (
+    <ConfigEditorInner
+      baseUrl={baseUrl}
+      namespace={props.namespace}
+      path={props.path}
+      initial={props.initial as GetConfigResponse}
+    />
+  );
+}
+
+function ConfigEditorInner(props: {
+  baseUrl: string;
+  namespace: string;
+  path: string;
+  initial: GetConfigResponse;
 }) {
   const router = useRouter();
-  const baseUrl = props.baseUrl || getConfigApiBaseUrl();
+  const queryClient = useQueryClient();
+  const baseUrl = props.baseUrl;
   const namespaceHref = `/configs/${encodeURIComponent(
     props.namespace,
   )}`;
 
   const [data, setData] = useState<GetConfigResponse>(
-    props.initial as GetConfigResponse,
+    props.initial,
   );
   const [editorValue, setEditorValue] = useState<string>(() =>
     prettify(data.config.format, data.latest.body_raw),
@@ -91,7 +118,7 @@ export function ConfigEditor(props: {
   const [viewingVersion, setViewingVersion] = useState<number | null>(null);
   const [readOnly, setReadOnly] = useState(false);
 
-  const [versions, setVersions] = useState<VersionMeta[] | null>(null);
+  const [versions, setVersions] = useState<ConfigVersionMeta[] | null>(null);
   const [loadingVersions, setLoadingVersions] = useState(false);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -113,27 +140,20 @@ export function ConfigEditor(props: {
     return [format === "json" ? jsonLang() : yamlLang()];
   }, [format]);
 
-  const versionsUrl = useMemo(() => {
-    return buildVersionsUrl({
-      baseUrl,
-      namespace: props.namespace,
-      path: props.path,
-    });
-  }, [baseUrl, props.namespace, props.path]);
-
-  const refreshVersions = async (): Promise<VersionMeta[] | null> => {
+  const refreshVersions = async (): Promise<ConfigVersionMeta[] | null> => {
     setLoadingVersions(true);
     setError(null);
     try {
-      const res = await fetch(versionsUrl, { cache: "no-store" });
-      if (!res.ok) {
-        const text = await res.text();
-        setError(`API ${res.status}: ${text || res.statusText}`);
-        return null;
-      }
-      const json = (await res.json()) as { items: VersionMeta[] };
-      setVersions(json.items);
-      return json.items;
+      const resp = await queryClient.fetchQuery({
+        ...configVersionsQueryOptions({
+          baseUrl,
+          namespace: props.namespace,
+          path: props.path,
+        }),
+        staleTime: 5_000,
+      });
+      setVersions(resp.items);
+      return resp.items;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
       return null;
@@ -143,18 +163,15 @@ export function ConfigEditor(props: {
   };
 
   const fetchVersionBodyRaw = async (version: number): Promise<string> => {
-    const url = buildVersionUrl({
-      baseUrl,
-      namespace: props.namespace,
-      path: props.path,
-      version,
+    const payload = await queryClient.fetchQuery({
+      ...configVersionQueryOptions({
+        baseUrl,
+        namespace: props.namespace,
+        path: props.path,
+        version,
+      }),
+      staleTime: 30_000,
     });
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`API ${res.status}: ${text || res.statusText}`);
-    }
-    const payload = (await res.json()) as GetVersionResponse;
     return prettify(format, payload.version.body_raw);
   };
 
@@ -218,34 +235,24 @@ export function ConfigEditor(props: {
         namespace: props.namespace,
         path: props.path,
       });
-      const res = await fetch(url, {
+      const next = await apiFetch<GetConfigResponse>(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body_raw }),
       });
-      if (!res.ok) {
-        const text = await res.text();
-        try {
-          const j = JSON.parse(text) as { code?: string; message?: string };
-          if (res.status === 409 && j?.code === "no_change") {
-            setCompareError("No changes to save.");
-            return;
-          }
-        } catch {
-          // ignore
-        }
-        setCompareError(`API ${res.status}: ${text || res.statusText}`);
-        return;
-      }
-      const next = (await res.json()) as GetConfigResponse;
       setData(next);
       setViewingVersion(null);
       setReadOnly(false);
       setEditorValue(prettify(next.config.format, next.latest.body_raw));
       setCompareOpen(false);
       await refreshVersions();
+      await invalidateConfigQueries(queryClient, props.namespace, props.path);
     } catch (e) {
-      setCompareError(e instanceof Error ? e.message : "Unknown error");
+      if (e instanceof HttpError && e.status === 409 && e.code === "no_change") {
+        setCompareError("No changes to save.");
+      } else {
+        setCompareError(e instanceof Error ? e.message : "Unknown error");
+      }
     } finally {
       setBusy(false);
     }
@@ -293,33 +300,23 @@ export function ConfigEditor(props: {
         namespace: props.namespace,
         path: props.path,
       });
-      const res = await fetch(url, {
+      const next = await apiFetch<GetConfigResponse>(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body_raw: editorValue }),
       });
-      if (!res.ok) {
-        const text = await res.text();
-        try {
-          const j = JSON.parse(text) as { code?: string; message?: string };
-          if (res.status === 409 && j?.code === "no_change") {
-            setError("No changes to save.");
-            return;
-          }
-        } catch {
-          // ignore
-        }
-        setError(`API ${res.status}: ${text || res.statusText}`);
-        return;
-      }
-      const next = (await res.json()) as GetConfigResponse;
       setData(next);
       setViewingVersion(null);
       setReadOnly(false);
       setEditorValue(prettify(next.config.format, next.latest.body_raw));
       await refreshVersions();
+      await invalidateConfigQueries(queryClient, props.namespace, props.path);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unknown error");
+      if (e instanceof HttpError && e.status === 409 && e.code === "no_change") {
+        setError("No changes to save.");
+      } else {
+        setError(e instanceof Error ? e.message : "Unknown error");
+      }
     } finally {
       setSaving(false);
     }
@@ -335,13 +332,7 @@ export function ConfigEditor(props: {
         path: props.path,
         version,
       });
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) {
-        const text = await res.text();
-        setError(`API ${res.status}: ${text || res.statusText}`);
-        return;
-      }
-      const payload = (await res.json()) as GetVersionResponse;
+      const payload = await apiFetch<GetVersionResponse>(url);
       setViewingVersion(payload.version.version);
       setEditorValue(prettify(data.config.format, payload.version.body_raw));
       setReadOnly(!editable);
@@ -350,6 +341,18 @@ export function ConfigEditor(props: {
     } finally {
       setSaving(false);
     }
+  };
+
+  const openVersionForEdit = async (version: number) => {
+    if (saving) return;
+
+    const dirty = !readOnly && (viewingVersion !== null || editorValue !== latestText);
+    if (dirty) {
+      const ok = window.confirm("Discard unsaved changes?");
+      if (!ok) return;
+    }
+
+    await viewVersion(version, { editable: true });
   };
 
   const backToLatest = async () => {
@@ -361,13 +364,7 @@ export function ConfigEditor(props: {
         namespace: props.namespace,
         path: props.path,
       });
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) {
-        const text = await res.text();
-        setError(`API ${res.status}: ${text || res.statusText}`);
-        return;
-      }
-      const next = (await res.json()) as GetConfigResponse;
+      const next = await apiFetch<GetConfigResponse>(url);
       setData(next);
       setViewingVersion(null);
       setReadOnly(false);
@@ -396,16 +393,12 @@ export function ConfigEditor(props: {
         path: props.path,
         version,
       });
-      const res = await fetch(url, { method: "DELETE" });
-      if (!res.ok) {
-        const text = await res.text();
-        setError(`API ${res.status}: ${text || res.statusText}`);
-        return;
-      }
+      await apiFetch<void>(url, { method: "DELETE" });
       if (viewingVersion === version) {
         await backToLatest();
       }
       await refreshVersions();
+      await invalidateConfigQueries(queryClient, props.namespace, props.path);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -421,7 +414,7 @@ export function ConfigEditor(props: {
     }
 
     const ok = window.confirm(
-      `Delete config '${expected}'?\n\nThis will delete all versions and cannot be undone.`,
+      `Delete config '${expected}'?\n\nThis will hard-delete the config and its versions. This cannot be undone.`,
     );
     if (!ok) return;
 
@@ -433,15 +426,21 @@ export function ConfigEditor(props: {
         namespace: props.namespace,
         path: props.path,
       });
-      const res = await fetch(url, { method: "DELETE" });
-      if (!res.ok) {
-        const text = await res.text();
-        setError(`API ${res.status}: ${text || res.statusText}`);
-        return;
-      }
+      await apiFetch<void>(url, { method: "DELETE" });
+      // Clear cached config data so we don't keep rendering stale data after a 404.
+      queryClient.removeQueries({
+        queryKey: queryKeys.configLatest(props.namespace, props.path),
+      });
+      queryClient.removeQueries({
+        queryKey: queryKeys.configVersions(props.namespace, props.path),
+      });
+      queryClient.removeQueries({
+        queryKey: ["configVersion", props.namespace, props.path],
+      });
+      await invalidateNamespaceQueries(queryClient, props.namespace);
+
       // Back to namespace browser
-      router.push(`/configs/${encodeURIComponent(props.namespace)}`);
-      router.refresh();
+      router.replace(`/configs/${encodeURIComponent(props.namespace)}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -507,7 +506,7 @@ export function ConfigEditor(props: {
         </div>
 
         <div className="overflow-hidden rounded-lg border border-black/[.08] dark:border-white/[.145]">
-          <CodeMirror
+          <CodeEditor
             value={editorValue}
             height="420px"
             extensions={extensions}
@@ -547,7 +546,7 @@ export function ConfigEditor(props: {
               Danger zone
             </div>
             <div className="mt-1 text-xs text-zinc-700 dark:text-zinc-300">
-              This will hard-delete the config and all its versions. Type{" "}
+              This will hard-delete the config and its versions. Type{" "}
               <code>{props.namespace}/{props.path}</code> to confirm.
             </div>
             <div className="mt-2 flex flex-col gap-2 md:flex-row md:items-center">
@@ -597,7 +596,32 @@ export function ConfigEditor(props: {
               return (
                 <div
                   key={v.id}
-                  className="flex items-center justify-between gap-4 py-3"
+                  className="flex items-center justify-between gap-4 rounded-lg px-3 py-3 hover:bg-zinc-950/[.03] dark:hover:bg-white/[.04]"
+                  role="button"
+                  tabIndex={0}
+                  aria-disabled={saving}
+                  onClick={() => {
+                    if (saving) return;
+                    if (isLatest) {
+                      if (viewingVersion !== null || readOnly) {
+                        void backToLatest();
+                      }
+                      return;
+                    }
+                    void openVersionForEdit(v.version);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    if (saving) return;
+                    if (isLatest) {
+                      if (viewingVersion !== null || readOnly) {
+                        void backToLatest();
+                      }
+                      return;
+                    }
+                    void openVersionForEdit(v.version);
+                  }}
                 >
                   <div className="flex flex-col">
                     <div className="text-sm font-medium">
@@ -616,24 +640,11 @@ export function ConfigEditor(props: {
                     <button
                       type="button"
                       className="h-9 rounded-lg border border-black/[.08] px-3 text-sm hover:bg-zinc-950/[.03] disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-white/[.04]"
-                      disabled={saving}
-                      onClick={() => viewVersion(v.version, { editable: false })}
-                    >
-                      View
-                    </button>
-                    <button
-                      type="button"
-                      className="h-9 rounded-lg border border-black/[.08] px-3 text-sm hover:bg-zinc-950/[.03] disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-white/[.04]"
-                      disabled={saving}
-                      onClick={() => viewVersion(v.version, { editable: true })}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="h-9 rounded-lg border border-black/[.08] px-3 text-sm hover:bg-zinc-950/[.03] disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-white/[.04]"
                       disabled={saving || isLatest}
-                      onClick={() => openCompare(v.version)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void openCompare(v.version);
+                      }}
                       title={
                         isLatest ? "Already the latest" : "Compare this version to latest"
                       }
@@ -644,7 +655,10 @@ export function ConfigEditor(props: {
                       type="button"
                       className="h-9 rounded-lg border border-red-500/30 px-3 text-sm text-red-600 hover:bg-red-500/5 disabled:opacity-60 dark:text-red-400"
                       disabled={saving || isLatest}
-                      onClick={() => deleteVersion(v.version)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void deleteVersion(v.version);
+                      }}
                     >
                       Delete
                     </button>
@@ -657,183 +671,55 @@ export function ConfigEditor(props: {
       </section>
 
       {compareOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-6xl overflow-hidden rounded-xl border border-black/[.08] bg-white shadow-xl dark:border-white/[.145] dark:bg-black">
-            <div className="flex items-center justify-between gap-4 border-b border-black/[.08] p-4 dark:border-white/[.145]">
-              <div className="flex flex-col gap-1">
-                <div className="text-sm font-medium">Compare versions</div>
-                <div className="text-xs text-zinc-600 dark:text-zinc-400">
-                  Changes are highlighted (best-effort). Edit either side and save
-                  to create a new version.
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="h-9 rounded-lg border border-black/[.08] px-3 text-sm hover:bg-zinc-950/[.03] disabled:opacity-60 dark:border-white/[.145] dark:hover:bg-white/[.04]"
-                  onClick={swapCompareSides}
-                  disabled={loadingCompare || savingCompareLeft || savingCompareRight}
-                >
-                  Swap
-                </button>
-                <button
-                  type="button"
-                  className="h-9 rounded-lg border border-black/[.08] px-3 text-sm hover:bg-zinc-950/[.03] dark:border-white/[.145] dark:hover:bg-white/[.04]"
-                  onClick={() => setCompareOpen(false)}
-                  disabled={savingCompareLeft || savingCompareRight}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-
-            {compareError ? (
-              <div className="border-b border-red-500/30 bg-red-500/5 p-3 text-sm text-red-600 dark:text-red-400">
-                {compareError}
-              </div>
-            ) : null}
-
-            <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
-              <div className="rounded-xl border border-black/[.08] bg-white p-3 dark:border-white/[.145] dark:bg-black">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-                    <span className="font-medium text-zinc-900 dark:text-zinc-50">
-                      Left
-                    </span>
-                    <select
-                      className="h-8 rounded-lg border border-black/[.08] bg-transparent px-2 text-xs dark:border-white/[.145]"
-                      value={leftVersion ?? undefined}
-                      onChange={async (e) => {
-                        const v = Number(e.target.value);
-                        setLeftVersion(v);
-                        setLoadingCompare(true);
-                        setCompareError(null);
-                        try {
-                          const t = await fetchVersionBodyRaw(v);
-                          setLeftText(t);
-                        } catch (err) {
-                          setCompareError(
-                            err instanceof Error ? err.message : "Unknown error",
-                          );
-                        } finally {
-                          setLoadingCompare(false);
-                        }
-                      }}
-                      disabled={loadingCompare || savingCompareLeft || savingCompareRight || versions === null}
-                    >
-                      {(versions ?? []).map((m) => (
-                        <option key={`l-${m.version}`} value={m.version}>
-                          v{m.version}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <button
-                    type="button"
-                    className="h-9 cursor-pointer rounded-lg bg-zinc-900 px-3 text-sm font-medium text-zinc-50 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                    onClick={() => saveCompare("left")}
-                    disabled={
-                      loadingCompare ||
-                      savingCompareLeft ||
-                      savingCompareRight ||
-                      saveCompareLeftDisabledNoChanges
-                    }
-                  >
-                    {savingCompareLeft
-                      ? "Saving..."
-                      : saveCompareLeftDisabledNoChanges
-                        ? "No changes"
-                        : "Save new version"}
-                  </button>
-                </div>
-                <div className="overflow-hidden rounded-lg border border-black/[.08] dark:border-white/[.145]">
-                  <CodeMirror
-                    value={leftText}
-                    height="360px"
-                    extensions={leftExtensions}
-                    theme={oneDark}
-                    onChange={(value) => setLeftText(value)}
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-black/[.08] bg-white p-3 dark:border-white/[.145] dark:bg-black">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-                    <span className="font-medium text-zinc-900 dark:text-zinc-50">
-                      Right
-                    </span>
-                    <select
-                      className="h-8 rounded-lg border border-black/[.08] bg-transparent px-2 text-xs dark:border-white/[.145]"
-                      value={rightVersion ?? undefined}
-                      onChange={async (e) => {
-                        const v = Number(e.target.value);
-                        setRightVersion(v);
-                        setLoadingCompare(true);
-                        setCompareError(null);
-                        try {
-                          const t = await fetchVersionBodyRaw(v);
-                          setRightText(t);
-                        } catch (err) {
-                          setCompareError(
-                            err instanceof Error ? err.message : "Unknown error",
-                          );
-                        } finally {
-                          setLoadingCompare(false);
-                        }
-                      }}
-                      disabled={loadingCompare || savingCompareLeft || savingCompareRight || versions === null}
-                    >
-                      {(versions ?? []).map((m) => (
-                        <option key={`r-${m.version}`} value={m.version}>
-                          v{m.version}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <button
-                    type="button"
-                    className="h-9 cursor-pointer rounded-lg bg-zinc-900 px-3 text-sm font-medium text-zinc-50 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                    onClick={() => saveCompare("right")}
-                    disabled={
-                      loadingCompare ||
-                      savingCompareLeft ||
-                      savingCompareRight ||
-                      saveCompareRightDisabledNoChanges
-                    }
-                  >
-                    {savingCompareRight
-                      ? "Saving..."
-                      : saveCompareRightDisabledNoChanges
-                        ? "No changes"
-                        : "Save new version"}
-                  </button>
-                </div>
-                <div className="overflow-hidden rounded-lg border border-black/[.08] dark:border-white/[.145]">
-                  <CodeMirror
-                    value={rightText}
-                    height="360px"
-                    extensions={rightExtensions}
-                    theme={oneDark}
-                    onChange={(value) => setRightText(value)}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <CompareModal
+          error={compareError}
+          loading={loadingCompare}
+          savingLeft={savingCompareLeft}
+          savingRight={savingCompareRight}
+          versions={versions}
+          leftVersion={leftVersion}
+          rightVersion={rightVersion}
+          leftText={leftText}
+          rightText={rightText}
+          leftExtensions={leftExtensions}
+          rightExtensions={rightExtensions}
+          theme={oneDark}
+          saveLeftDisabledNoChanges={saveCompareLeftDisabledNoChanges}
+          saveRightDisabledNoChanges={saveCompareRightDisabledNoChanges}
+          onClose={() => setCompareOpen(false)}
+          onSwap={swapCompareSides}
+          onSaveLeft={() => saveCompare("left")}
+          onSaveRight={() => saveCompare("right")}
+          onLeftTextChange={(v) => setLeftText(v)}
+          onRightTextChange={(v) => setRightText(v)}
+          onLeftVersionChange={async (v) => {
+            setLeftVersion(v);
+            setLoadingCompare(true);
+            setCompareError(null);
+            try {
+              const t = await fetchVersionBodyRaw(v);
+              setLeftText(t);
+            } catch (err) {
+              setCompareError(err instanceof Error ? err.message : "Unknown error");
+            } finally {
+              setLoadingCompare(false);
+            }
+          }}
+          onRightVersionChange={async (v) => {
+            setRightVersion(v);
+            setLoadingCompare(true);
+            setCompareError(null);
+            try {
+              const t = await fetchVersionBodyRaw(v);
+              setRightText(t);
+            } catch (err) {
+              setCompareError(err instanceof Error ? err.message : "Unknown error");
+            } finally {
+              setLoadingCompare(false);
+            }
+          }}
+        />
       ) : null}
     </div>
   );
 }
-
-function prettify(format: ConfigFormat, raw: string): string {
-  if (format !== "json") return raw;
-  try {
-    const obj = JSON.parse(raw);
-    return JSON.stringify(obj, null, 2) + "\n";
-  } catch {
-    return raw;
-  }
-}
-
