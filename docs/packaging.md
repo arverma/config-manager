@@ -20,6 +20,19 @@ docker build -t config-manager-ui:dev ./ui
 
 Chart source: `charts/config-manager/`
 
+## Install from the public Helm repo (GitHub Pages)
+
+Once published, the chart can be installed via `helm repo add`:
+
+```bash
+helm repo add config-manager https://<org>.github.io/<repo>
+helm repo update
+
+helm install config-manager config-manager/config-manager --version 0.1.0 \
+  --set ingress.enabled=true \
+  --set ingress.host=example.com
+```
+
 Install with an external Postgres `DATABASE_URL` secret (simplest):
 
 ```bash
@@ -49,6 +62,12 @@ helm install config-manager ./charts/config-manager \
 ```
 
 In this mode, store the Postgres password in Vault as `DB_PASSWORD` (so it becomes an env var), and the API will assemble the connection string from `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD` (optionally `DB_SSLMODE`).
+
+## Publishing the public Helm repo (GitHub Pages)
+
+This repo includes a GitHub Actions workflow that publishes the Helm repo to a `gh-pages` branch on tags (for example `v0.1.0`). After enabling GitHub Pages to serve the `gh-pages` branch, the Helm repo becomes available at:
+
+- `https://<org>.github.io/<repo>/index.yaml`
 
 ## Publishing to GCP Artifact Registry (GAR)
 
