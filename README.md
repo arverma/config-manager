@@ -59,6 +59,7 @@ Open the UI at `http://localhost:3000` (API is `http://localhost:8080`).
 - [`docs/development.md`](docs/development.md): local workflow
 - [`docs/deployment.md`](docs/deployment.md): production notes + checklist
 - [`docs/environment-variables.md`](docs/environment-variables.md): all env vars
+- [`docs/packaging.md`](docs/packaging.md): Docker/Helm packaging + release notes
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): contributor workflow and conventions
 
 ## Common commands

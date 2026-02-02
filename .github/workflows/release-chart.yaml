@@ -1,0 +1,58 @@
+name: Publish Helm chart (GitHub Pages)
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Build chart repo content
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+
+          PAGES_URL="https://${OWNER}.github.io/${REPO_NAME}"
+
+          rm -rf .gh-pages
+          mkdir -p .gh-pages
+
+          # Pull existing gh-pages (if present) so we keep older chart packages.
+          if git ls-remote --exit-code --heads "https://github.com/${REPO}.git" gh-pages >/dev/null 2>&1; then
+            git clone --depth 1 --branch gh-pages "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" .gh-pages
+          fi
+
+          # Package the chart into the gh-pages folder.
+          helm package charts/config-manager --destination .gh-pages
+
+          # Regenerate/merge index.yaml.
+          if [ -f .gh-pages/index.yaml ]; then
+            cp .gh-pages/index.yaml /tmp/index.yaml
+            helm repo index .gh-pages --url "${PAGES_URL}" --merge /tmp/index.yaml
+          else
+            helm repo index .gh-pages --url "${PAGES_URL}"
+          fi
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: .gh-pages
