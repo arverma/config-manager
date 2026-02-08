@@ -9,6 +9,8 @@ This project can be packaged as a single install (similar to Airflow’s chart):
 
 ## Docker images
 
+**Official public images** (published on release tags to GitHub Container Registry): `ghcr.io/<org>/config-manager-api`, `ghcr.io/<org>/config-manager-ui`. Tags match release versions (e.g. `0.1.0` for tag `v0.1.0`); `latest` points to the latest release.
+
 Build locally:
 
 ```bash
@@ -63,11 +65,12 @@ helm install config-manager ./charts/config-manager \
 
 In this mode, store the Postgres password in Vault as `DB_PASSWORD` (so it becomes an env var), and the API will assemble the connection string from `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD` (optionally `DB_SSLMODE`).
 
-## Publishing the public Helm repo (GitHub Pages)
+## Publishing (release tag)
 
-This repo includes a GitHub Actions workflow that publishes the Helm repo to a `gh-pages` branch on tags (for example `v0.1.0`). After enabling GitHub Pages to serve the `gh-pages` branch, the Helm repo becomes available at:
+On push of a tag `v*` (e.g. `v0.1.0`), GitHub Actions:
 
-- `https://<org>.github.io/<repo>/index.yaml`
+1. **Helm chart**: Publishes the chart to the `gh-pages` branch (Helm repo at `https://<org>.github.io/<repo>/index.yaml`).
+2. **Docker images**: Builds and pushes API and UI images to GHCR (`ghcr.io/<org>/config-manager-api`, `ghcr.io/<org>/config-manager-ui`) with the same version tag (e.g. `0.1.0`) and `latest`.
 
 ## Publishing to GCP Artifact Registry (GAR)
 
