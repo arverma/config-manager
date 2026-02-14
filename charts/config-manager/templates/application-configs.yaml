@@ -1,4 +1,4 @@
-{{- /* ConfigMap for API -config; content from .Values.api.appConfigPath */}}
+{{- /* ConfigMap for API -config from chart default files/application.yaml; deployment repo can override per env */}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,4 +7,4 @@ metadata:
     {{- include "config-manager.labels" . | nindent 4 }}
 data:
   application.yaml: |
-{{ tpl (.Files.Get .Values.api.appConfigPath) . | indent 4 }}
+{{ tpl (.Files.Get "files/application.yaml") . | indent 4 }}

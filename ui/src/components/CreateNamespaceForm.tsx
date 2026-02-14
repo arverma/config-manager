@@ -15,7 +15,7 @@ export function CreateNamespaceForm() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
 
-  const nameIsValid = /^[a-z_]+$/.test(name.trim());
+  const nameIsValid = /^[a-zA-Z0-9_-]+$/.test(name.trim());
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -53,7 +53,7 @@ export function CreateNamespaceForm() {
         className="h-9 rounded-lg border border-black/[.08] bg-transparent px-3 text-sm dark:border-white/[.145]"
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="data_engg"
+        placeholder="Data-Engg-Team"
       />
       {createMutation.error ? (
         <div className="text-xs text-red-600 dark:text-red-400">
@@ -65,13 +65,13 @@ export function CreateNamespaceForm() {
         </div>
       ) : (
         <div className="text-xs text-zinc-600 dark:text-zinc-400">
-          Only <code>a-z</code> and <code>_</code> allowed.
+          Letters, digits, underscore, hyphen only.
         </div>
       )}
       {!createMutation.error && name.trim().length > 0 && !nameIsValid ? (
         <div className="text-xs text-red-600 dark:text-red-400">
-          Invalid name. Use lowercase letters and underscore only (pattern{" "}
-          <code>^[a-z_]+$</code>).
+          Invalid name. Letters, digits, underscore, hyphen only (pattern{" "}
+          <code>^[a-zA-Z0-9_-]+$</code>).
         </div>
       ) : null}
       <div className="flex items-center justify-end gap-2">

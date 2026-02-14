@@ -35,6 +35,14 @@ async function parseApiError(res: Response): Promise<ApiError | null> {
   }
 }
 
+function safeParseJSON<T>(text: string): T {
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error("Invalid JSON response");
+  }
+}
+
 export async function apiFetch<T>(
   pathOrUrl: string,
   init?: RequestInit,
@@ -88,12 +96,11 @@ export async function apiFetch<T>(
     return undefined as T;
   }
 
-  // Some endpoints may return empty bodies (rare, but be defensive).
   const text = await res.text();
   if (!text) {
     return undefined as T;
   }
-  return JSON.parse(text) as T;
+  return safeParseJSON<T>(text);
 }
 
 function joinBaseAndPath(baseUrl: string, path: string): string {
@@ -132,6 +139,6 @@ async function apiFetchAbsolute<T>(url: string, init?: RequestInit): Promise<T> 
   if (!text) {
     return undefined as T;
   }
-  return JSON.parse(text) as T;
+  return safeParseJSON<T>(text);
 }
 
