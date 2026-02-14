@@ -38,11 +38,10 @@ Config Manager is a powerful, open source platform for managing and versioning c
 
 ```bash
 make db-up
-make db-apply
 make api-run
 ```
 
-In a second terminal:
+The API runs DB migrations on startup. In a second terminal:
 
 ```bash
 make ui-install

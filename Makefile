@@ -29,7 +29,7 @@ help:
 	@printf "  db-down           Stop Postgres\n"
 	@printf "  db-reset          Stop Postgres + delete volume\n"
 	@printf "  db-psql           Open psql shell\n"
-	@printf "  db-apply          Apply db/schema.sql\n"
+	@printf "  db-apply          Apply db/schema.sql (optional; API runs migrations on startup)\n"
 	@printf "  db-drop-schema    Drop + recreate public schema (destructive)\n"
 	@printf "\n"
 	@printf "  api-run           Run Go API (PORT=$(API_PORT))\n"
@@ -56,10 +56,10 @@ dev:
 	@printf "\nLocal dev:\n\n"
 	@printf "Terminal 1:\n"
 	@printf "  make db-up\n"
-	@printf "  make db-apply\n"
 	@printf "  make api-run\n\n"
 	@printf "Terminal 2:\n"
 	@printf "  make ui-dev\n\n"
+	@printf "The API runs DB migrations on startup; no need for db-apply.\n\n"
 
 .PHONY: db-up
 db-up:
@@ -79,6 +79,7 @@ db-psql:
 	PGPASSWORD=$(DB_PASS) psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME)
 
 .PHONY: db-apply
+# Schema is applied on API startup via backend/migrations/. Use this only to apply without starting the API.
 db-apply:
 	PGPASSWORD=$(DB_PASS) psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME) -f "db/schema.sql"
 

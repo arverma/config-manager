@@ -12,9 +12,10 @@ Terminal 1:
 
 ```bash
 make db-up
-make db-apply
 make api-run
 ```
+
+(The API runs DB migrations on startup.)
 
 Terminal 2:
 
@@ -50,13 +51,13 @@ See `docs/testing.md` for the recommended test harness approach.
 - `api/openapi.yaml`: API contract (update when behavior changes)
 - `backend/`: Go API
 - `ui/`: Next.js UI
-- `db/`: Postgres schema
+- `db/`: legacy schema reference; source of truth is `backend/migrations/` (API runs these on startup)
 - `docs/`: architecture and operational docs
 
 ## Conventions
 
 - **API changes**: update `api/openapi.yaml` in the same PR.
-- **DB changes**: keep schema changes minimal; document them in the PR.
+- **DB changes**: add versioned migrations under `backend/migrations/` (e.g. `000002_description.up.sql` and `.down.sql`); document in the PR.
 - **Go**: keep handlers small; prefer shared helpers over copy/paste.
 - **UI**: prefer shared hooks/utilities over per-component fetch logic.
 

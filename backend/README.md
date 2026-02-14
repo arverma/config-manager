@@ -8,9 +8,10 @@ For full local setup (DB + API + UI), see the root `README.md`.
 
 ```bash
 make db-up
-make db-apply
 make api-run
 ```
+
+The API runs DB migrations on startup (from `backend/migrations/`).
 
 ## Health
 

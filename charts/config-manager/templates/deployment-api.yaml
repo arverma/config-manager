@@ -17,6 +17,10 @@ spec:
         {{- include "config-manager.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: api
     spec:
+      {{- with .Values.api.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{ $basePath := (.Values.api.env.HTTP_BASE_PATH | default "/api") }}
       {{ $apiSecretsEnabled := and .Values.api.externalSecret .Values.api.externalSecret.enabled }}
       containers:
