@@ -2,8 +2,18 @@ apiVersion: v1
 entries:
   config-manager:
   - apiVersion: v2
+    appVersion: 0.1.4
+    created: "2026-02-14T09:18:33.090917869Z"
+    description: Config Manager (UI + API) Helm chart
+    digest: 5da915e97cd19aa4073c6b819af6c1ea0adca007285267a22c5814403f181338
+    name: config-manager
+    type: application
+    urls:
+    - https://arverma.github.io/config-manager/config-manager-0.1.2.tgz
+    version: 0.1.2
+  - apiVersion: v2
     appVersion: 0.1.2
-    created: "2026-02-14T06:27:59.57656215Z"
+    created: "2026-02-14T09:18:33.090544405Z"
     description: Config Manager (UI + API) Helm chart
     digest: f233d6876095819598f52e2b58be468f5cad776970e554342ab0f965b1050d01
     name: config-manager
@@ -13,7 +23,7 @@ entries:
     version: 0.1.1
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-02-14T06:27:59.576099933Z"
+    created: "2026-02-14T09:18:33.090185178Z"
     description: Config Manager (UI + API) Helm chart
     digest: 73fe73a65587da65d1045ca2207c5d61cb7f7129e9f03f3f73eba8c79e194d24
     name: config-manager
@@ -21,4 +31,4 @@ entries:
     urls:
     - https://arverma.github.io/config-manager/config-manager-0.1.0.tgz
     version: 0.1.0
-generated: "2026-02-14T06:27:59.575675628Z"
+generated: "2026-02-14T09:18:33.089715603Z"
