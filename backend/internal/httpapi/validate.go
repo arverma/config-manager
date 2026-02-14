@@ -7,7 +7,10 @@ import (
 	"unicode"
 )
 
-var namespaceRE = regexp.MustCompile(`^[a-z_]+$`)
+// Namespace/name: letters, digits, underscore, hyphen only.
+var namespaceRE = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+const namespaceErrMsg = "letters, digits, underscore, hyphen only"
 
 func validateNamespace(namespace string) error {
 	namespace = strings.TrimSpace(namespace)
@@ -15,7 +18,7 @@ func validateNamespace(namespace string) error {
 		return errors.New("namespace is required")
 	}
 	if !namespaceRE.MatchString(namespace) {
-		return errors.New("namespace must match ^[a-z_]+$")
+		return errors.New("namespace must be " + namespaceErrMsg)
 	}
 	return nil
 }
@@ -26,7 +29,7 @@ func validateNamespaceName(name string) error {
 		return errors.New("name is required")
 	}
 	if !namespaceRE.MatchString(name) {
-		return errors.New("name must match ^[a-z_]+$")
+		return errors.New("name must be " + namespaceErrMsg)
 	}
 	return nil
 }

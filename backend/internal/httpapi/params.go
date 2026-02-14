@@ -11,8 +11,9 @@ import (
 type ConfigFormat string
 
 const (
-	FormatJSON ConfigFormat = "json"
-	FormatYAML ConfigFormat = "yaml"
+	FormatJSON       ConfigFormat = "json"
+	FormatYAML       ConfigFormat = "yaml"
+	maxCursorOffset               = 100_000
 )
 
 func parseOptionalBool(req *http.Request, key string) (bool, bool, error) {
@@ -50,10 +51,12 @@ func parseCursorOffset(req *http.Request) (int, error) {
 	}
 	decoded, err := base64.StdEncoding.DecodeString(raw)
 	if err != nil {
-		// Also allow plain integer cursors for local debugging.
 		n, err2 := strconv.Atoi(raw)
 		if err2 != nil || n < 0 {
 			return 0, fmt.Errorf("invalid cursor")
+		}
+		if n > maxCursorOffset {
+			return 0, fmt.Errorf("cursor offset exceeds maximum")
 		}
 		return n, nil
 	}
@@ -64,6 +67,9 @@ func parseCursorOffset(req *http.Request) (int, error) {
 	n, err := strconv.Atoi(strings.TrimPrefix(s, "o:"))
 	if err != nil || n < 0 {
 		return 0, fmt.Errorf("invalid cursor")
+	}
+	if n > maxCursorOffset {
+		return 0, fmt.Errorf("cursor offset exceeds maximum")
 	}
 	return n, nil
 }

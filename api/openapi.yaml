@@ -343,8 +343,8 @@ components:
       schema:
         type: string
         minLength: 1
-        pattern: "^[a-z_]+$"
-      description: Top-level namespace (lowercase letters and underscore only).
+        pattern: "^[a-zA-Z0-9_-]+$"
+      description: Top-level namespace (letters, digits, underscore, hyphen only).
     PathGreedy:
       name: path
       in: path
@@ -362,7 +362,7 @@ components:
       required: false
       schema:
         type: string
-      description: Filter results to a single namespace.
+      description: Filter results to a single namespace (same charset as path param).
     Prefix:
       name: prefix
       in: query
@@ -609,8 +609,8 @@ components:
       properties:
         name:
           type: string
-          pattern: "^[a-z_]+$"
-          description: Namespace name (lowercase letters and underscore only).
+          pattern: "^[a-zA-Z0-9_-]+$"
+          description: Namespace name (letters, digits, underscore, hyphen only).
 
     BrowseEntryFolder:
       type: object
