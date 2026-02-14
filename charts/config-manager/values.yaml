@@ -9,6 +9,9 @@ api:
   imagePullSecrets: []
   service:
     port: 8080
+    # Service type (ClusterIP default). In a parent chart, set config-manager.api.service.type: LoadBalancer
+    # to expose via external IP when not using Ingress.
+    type: ClusterIP
   externalSecret:
     # If enabled, an ExternalSecret is created that extracts ALL key/value pairs
     # from a Vault path into a Kubernetes Secret, and the API pod can `envFrom` it.
@@ -37,6 +40,9 @@ ui:
   imagePullSecrets: []
   service:
     port: 3000
+    # Service type (ClusterIP default). In a parent chart, set config-manager.ui.service.type: LoadBalancer
+    # to get an external IP when DNS/Ingress is not available; UI URL is then http://<EXTERNAL-IP>:3000.
+    type: ClusterIP
   resources: {}
 
 database:
