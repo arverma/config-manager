@@ -3,4 +3,4 @@ name: config-manager
 description: Config Manager (UI + API) Helm chart
 type: application
 version: 0.1.1
-appVersion: "0.1.2"
+appVersion: "0.1.3"
