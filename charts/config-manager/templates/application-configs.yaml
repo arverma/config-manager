@@ -1,0 +1,10 @@
+{{- /* ConfigMap for API -config; content from .Values.api.appConfigPath */}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "config-manager.fullname" . }}-configs
+  labels:
+    {{- include "config-manager.labels" . | nindent 4 }}
+data:
+  application.yaml: |
+{{ tpl (.Files.Get .Values.api.appConfigPath) . | indent 4 }}

@@ -47,9 +47,7 @@ helm install config-manager ./charts/config-manager \
   --set ingress.host=example.com
 ```
 
-Or, if you use External Secrets Operator (ESO) + Vault, have it extract **all** key/value pairs from a Vault path and expose them to the API pod (via `envFrom`) (recommended when you want password-only secrets and room to add more env vars later).
-
-This is ideal when you want to keep adding keys at the same Vault path over time and have them available as environment variables (keys must be valid env var names).
+With External Secrets Operator (ESO) + Vault: enable `api.externalSecret` to sync a Vault path into a Secret; the API uses `envFrom`. Store `DB_PASSWORD` (and other secrets) in Vault; keys must be valid env var names.
 
 ```bash
 helm install config-manager ./charts/config-manager \

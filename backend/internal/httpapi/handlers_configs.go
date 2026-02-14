@@ -45,7 +45,7 @@ func handleListConfigs(w http.ResponseWriter, req *http.Request, db *pgxpool.Poo
 		recursive = true
 	}
 
-	// Basic list. Vault-like folder browsing is handled by /namespaces/{namespace}/browse.
+	// List configs; folder-style browse is /namespaces/{namespace}/browse.
 	var rows pgx.Rows
 	if recursive {
 		rows, err = db.Query(req.Context(), `

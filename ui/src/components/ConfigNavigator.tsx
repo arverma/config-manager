@@ -6,10 +6,7 @@ import { useMemo, useState } from "react";
 type ConfigFormat = "json" | "yaml";
 
 function normalizePath(path: string): string {
-  // UI mirrors REST URL: /configs/{namespace}/{path}
-  // Keep it minimal: trim spaces and leading/trailing slashes.
-  const trimmed = path.trim().replace(/^\/+/, "").replace(/\/+$/, "");
-  return trimmed;
+  return path.trim().replace(/^\/+/, "").replace(/\/+$/, "");
 }
 
 export function ConfigNavigator() {

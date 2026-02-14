@@ -1,13 +1,10 @@
 export type ConfigFormat = "json" | "yaml";
 
+/** Base URL for API calls: /api in browser (proxy Route Handler or ingress); server-side uses env. */
 export function getConfigApiBaseUrl(): string {
-  // In the browser, prefer same-origin routing. In our packaged deployment,
-  // ingress routes `/api/*` to the API service.
   if (typeof window !== "undefined") {
     return "/api";
   }
-
-  // Server-side can read non-public env vars too.
   return (
     process.env.CONFIG_API_BASE_URL ||
     process.env.NEXT_PUBLIC_CONFIG_API_BASE_URL ||
@@ -63,7 +60,6 @@ export function buildDeleteVersionPath(args: {
   path: string;
   version: number;
 }): string {
-  // Same path as buildVersionPath, but used with DELETE.
   return buildVersionPath(args);
 }
 

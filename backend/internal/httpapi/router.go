@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"config-manager/internal/config"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,10 +21,13 @@ func NewRouter(db *pgxpool.Pool) http.Handler {
 	basePath := normalizeBasePath(os.Getenv("HTTP_BASE_PATH"))
 
 	api := chi.NewRouter()
+	requestTimeout := time.Duration(config.Int("api.request.requestTimeoutSeconds", 30)) * time.Second
+	readyzPingTimeout := time.Duration(config.Int("api.readyz.pingTimeoutSeconds", 2)) * time.Second
+
 	api.Use(middleware.RequestID)
 	api.Use(middleware.RealIP)
 	api.Use(middleware.Recoverer)
-	api.Use(middleware.Timeout(30 * time.Second))
+	api.Use(middleware.Timeout(requestTimeout))
 	api.Use(middleware.Logger)
 
 	api.Use(corsMiddleware(parseAllowedOriginsEnv()))
@@ -31,7 +36,7 @@ func NewRouter(db *pgxpool.Pool) http.Handler {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
 	api.Get("/readyz", func(w http.ResponseWriter, req *http.Request) {
-		ctx, cancel := context.WithTimeout(req.Context(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(req.Context(), readyzPingTimeout)
 		defer cancel()
 		if err := db.Ping(ctx); err != nil {
 			writeError(w, http.StatusServiceUnavailable, "not_ready", "database not reachable", nil)
@@ -112,7 +117,7 @@ func NewRouter(db *pgxpool.Pool) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(middleware.Timeout(requestTimeout))
 	r.Use(middleware.Logger)
 
 	r.Use(corsMiddleware(parseAllowedOriginsEnv()))

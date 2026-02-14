@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"log"
 	"net"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"config-manager/internal/commons"
+	"config-manager/internal/config"
 	"config-manager/internal/httpapi"
 	"config-manager/migrations"
 
@@ -23,6 +26,13 @@ import (
 )
 
 func main() {
+	configPath := flag.String("config", "", "path to application.yaml (server, DB retry, timeouts); overridden by CONFIG_MANAGER_* env vars")
+	flag.Parse()
+
+	if err := config.Load(*configPath); err != nil {
+		log.Fatalf("config: %v", err)
+	}
+
 	port := getenvDefault("PORT", "8080")
 	databaseURL, err := databaseURLFromEnv()
 	if err != nil {
@@ -32,23 +42,38 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
+	maxAttempts := config.Int("api.databaseRetry.maxAttempts", 5)
+	initialBackoff := time.Duration(config.Int("api.databaseRetry.retryBackoffSeconds", 2)) * time.Second
+
+	var pool *pgxpool.Pool
+	if err := commons.RetryWithBackoff(maxAttempts, initialBackoff, func() error {
+		var connectErr error
+		pool, connectErr = pgxpool.New(ctx, databaseURL)
+		return connectErr
+	}); err != nil {
 		log.Fatalf("connect postgres: %v", err)
 	}
 	defer pool.Close()
 
-	if err := runMigrations(databaseURL); err != nil {
+	if err := commons.RetryWithBackoff(maxAttempts, initialBackoff, func() error {
+		return runMigrations(databaseURL)
+	}); err != nil {
 		log.Fatalf("migrate: %v", err)
 	}
+
+	readHeaderTimeout := time.Duration(config.Int("api.server.readHeaderTimeoutSeconds", 5)) * time.Second
+	readTimeout := time.Duration(config.Int("api.server.readTimeoutSeconds", 30)) * time.Second
+	writeTimeout := time.Duration(config.Int("api.server.writeTimeoutSeconds", 30)) * time.Second
+	idleTimeout := time.Duration(config.Int("api.server.idleTimeoutSeconds", 60)) * time.Second
+	shutdownTimeout := time.Duration(config.Int("api.server.shutdownTimeoutSeconds", 10)) * time.Second
 
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           httpapi.NewRouter(pool),
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
 		MaxHeaderBytes:    1 << 20, // 1 MiB
 	}
 
@@ -61,7 +86,7 @@ func main() {
 
 	<-ctx.Done()
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
 	_ = srv.Shutdown(shutdownCtx)
@@ -72,7 +97,7 @@ func runMigrations(databaseURL string) error {
 	if err != nil {
 		return err
 	}
-	// migrate's pgx v5 driver expects pgx5:// scheme
+	// golang-migrate pgx v5 driver expects pgx5:// scheme
 	migrateDBURL := strings.Replace(databaseURL, "postgres://", "pgx5://", 1)
 	if migrateDBURL == databaseURL {
 		migrateDBURL = "pgx5://" + strings.TrimPrefix(databaseURL, "postgres:")

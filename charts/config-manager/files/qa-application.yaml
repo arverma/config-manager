@@ -1,0 +1,16 @@
+# QA application config (api.appConfigPath: files/qa-application.yaml)
+
+api:
+  server:
+    readHeaderTimeoutSeconds: 5
+    readTimeoutSeconds: 30
+    writeTimeoutSeconds: 30
+    idleTimeoutSeconds: 60
+    shutdownTimeoutSeconds: 10
+  request:
+    requestTimeoutSeconds: 30
+  readyz:
+    pingTimeoutSeconds: 2
+  databaseRetry:
+    maxAttempts: 5
+    retryBackoffSeconds: 2

@@ -50,8 +50,7 @@ export async function apiFetch<T>(
     throw new Error("apiFetch expects a path starting with '/'");
   }
 
-  // Dev-time guard: callers should pass API paths (e.g. `/namespaces`), not
-  // already-prefixed paths (e.g. `/api/namespaces`).
+  // Guard: pass API path (e.g. /namespaces), not /api/namespaces.
   if (
     process.env.NODE_ENV !== "production" &&
     baseUrl.startsWith("/") &&
