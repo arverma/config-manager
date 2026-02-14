@@ -5,8 +5,8 @@ import (
 	"errors"
 	"log"
 	"net"
-	"net/url"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -14,7 +14,11 @@ import (
 	"time"
 
 	"config-manager/internal/httpapi"
+	"config-manager/migrations"
 
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -33,6 +37,10 @@ func main() {
 		log.Fatalf("connect postgres: %v", err)
 	}
 	defer pool.Close()
+
+	if err := runMigrations(databaseURL); err != nil {
+		log.Fatalf("migrate: %v", err)
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + port,
@@ -57,6 +65,27 @@ func main() {
 	defer cancel()
 
 	_ = srv.Shutdown(shutdownCtx)
+}
+
+func runMigrations(databaseURL string) error {
+	sourceDriver, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		return err
+	}
+	// migrate's pgx v5 driver expects pgx5:// scheme
+	migrateDBURL := strings.Replace(databaseURL, "postgres://", "pgx5://", 1)
+	if migrateDBURL == databaseURL {
+		migrateDBURL = "pgx5://" + strings.TrimPrefix(databaseURL, "postgres:")
+	}
+	m, err := migrate.NewWithSourceInstance("iofs", sourceDriver, migrateDBURL)
+	if err != nil {
+		return err
+	}
+	defer func() { _, _ = m.Close() }()
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return err
+	}
+	return nil
 }
 
 func getenvDefault(key, def string) string {

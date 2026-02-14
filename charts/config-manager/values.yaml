@@ -6,6 +6,7 @@ api:
     repository: "LOCATION-docker.pkg.dev/PROJECT/REPO/config-manager-api"
     tag: "latest"
     pullPolicy: IfNotPresent
+  imagePullSecrets: []
   service:
     port: 8080
   externalSecret:
@@ -33,6 +34,7 @@ ui:
     repository: "LOCATION-docker.pkg.dev/PROJECT/REPO/config-manager-ui"
     tag: "latest"
     pullPolicy: IfNotPresent
+  imagePullSecrets: []
   service:
     port: 3000
   resources: {}

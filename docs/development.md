@@ -6,9 +6,10 @@ Terminal 1:
 
 ```bash
 make db-up
-make db-apply
 make api-run
 ```
+
+The API applies migrations on startup; no separate schema step needed.
 
 Terminal 2:
 

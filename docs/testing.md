@@ -21,7 +21,7 @@ Requirements:
 Strategy:
 - Start Postgres (docker compose)
 - Create a temporary database per test run (or per package)
-- Apply `db/schema.sql`
+- Run migrations (the API runs them on startup, or run the same migrations from `backend/migrations/` in test setup)
 - Create a `pgxpool.Pool` to that DB
 - Use `httptest.NewServer(httpapi.NewRouter(pool))` to run request/response tests
 
@@ -36,7 +36,7 @@ make db-up
 2. In tests:
    - connect to `postgres` database using admin creds
    - `CREATE DATABASE config_manager_test_<random>`
-   - connect to that DB and apply `db/schema.sql`
+   - connect to that DB and apply migrations (e.g. run the API against it briefly, or run migration SQL from `backend/migrations/`)
    - run tests
    - `DROP DATABASE ...` in cleanup
 
