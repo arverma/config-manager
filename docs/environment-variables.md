@@ -2,7 +2,7 @@
 
 ## Backend (API)
 
-Server timeouts, request timeout, readiness ping timeout, and DB retry settings are read from the application config file (see `backend/confs/application.yaml` and Helm `api.appConfigPath`). They can be overridden at runtime by `CONFIG_MANAGER_*` env vars (e.g. `CONFIG_MANAGER_API_SERVER_READ_HEADER_TIMEOUT_SECONDS=5`).
+Server timeouts, request timeout, readiness ping timeout, and DB retry settings are read from the application config file (e.g. `backend/confs/application.yaml` locally; in Helm the chart ships a default and the deployment repo can override per environment). They can be overridden at runtime by `CONFIG_MANAGER_*` env vars (e.g. `CONFIG_MANAGER_API_SERVER_READ_HEADER_TIMEOUT_SECONDS=5`).
 
 ### Required
 

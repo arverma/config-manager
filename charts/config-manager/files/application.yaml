@@ -1,4 +1,4 @@
-# Production application config (api.appConfigPath: files/prod-application.yaml)
+# Default application config for the chart. Deployment repo can override per environment.
 
 api:
   server:
@@ -6,11 +6,11 @@ api:
     readTimeoutSeconds: 30
     writeTimeoutSeconds: 30
     idleTimeoutSeconds: 60
-    shutdownTimeoutSeconds: 15
+    shutdownTimeoutSeconds: 10
   request:
     requestTimeoutSeconds: 30
   readyz:
     pingTimeoutSeconds: 2
   databaseRetry:
-    maxAttempts: 6
+    maxAttempts: 5
     retryBackoffSeconds: 2

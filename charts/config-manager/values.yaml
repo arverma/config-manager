@@ -23,8 +23,6 @@ api:
   env:
     HTTP_BASE_PATH: "/api"
     CORS_ALLOWED_ORIGINS: "*"  # "*" or comma list; often unnecessary with same-origin
-  # Chart path to application.yaml (ConfigMap). Production: use values-prod.yaml with appConfigPath: "files/prod-application.yaml".
-  appConfigPath: "files/qa-application.yaml"
   resources: {}
 
 ui:
