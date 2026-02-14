@@ -29,8 +29,7 @@ spec:
             - name: http
               containerPort: 3000
           env:
-            # Enables Next.js dev/proxy behavior for /api when UI handles the request.
-            # With path-based ingress, /api should normally be routed directly to the API service.
+            # Upstream API URL for the UI proxy Route Handler (when request hits the UI pod).
             - name: CONFIG_API_BASE_URL
               value: {{ printf "http://%s-api:%d%s" (include "config-manager.fullname" .) (.Values.api.service.port | int) (.Values.api.env.HTTP_BASE_PATH | default "/api") | quote }}
           resources:

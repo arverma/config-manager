@@ -20,7 +20,6 @@ func parseBody(format ConfigFormat, raw string) (any, []byte, error) {
 		if err := dec.Decode(&anyVal); err != nil {
 			return nil, nil, errors.New("invalid json")
 		}
-		// ensure no trailing tokens
 		if err := dec.Decode(&struct{}{}); err != io.EOF {
 			return nil, nil, errors.New("invalid json")
 		}

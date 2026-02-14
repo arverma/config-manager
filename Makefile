@@ -1,14 +1,8 @@
 .DEFAULT_GOAL := help
 
-# Config Manager Makefile
-#
-# Usage:
-#   make <target>
-#
-# Notes:
-# - DB runs via docker compose (see docker-compose.yaml)
-# - API reads DATABASE_URL
-# - UI reads NEXT_PUBLIC_CONFIG_API_BASE_URL / CONFIG_API_BASE_URL
+# Config Manager Makefile. Usage: make <target>
+# API: config from file (-config) + CONFIG_MANAGER_* env overlay; DATABASE_URL for DB.
+# UI proxy: CONFIG_API_BASE_URL at request time. ui-image-build/ui-publish: linux/amd64 for GKE.
 
 PROJECT := config-manager
 
@@ -21,6 +15,10 @@ DB_NAME ?= config_manager
 DATABASE_URL ?= postgres://$(DB_USER):$(DB_PASS)@localhost:$(DB_PORT)/$(DB_NAME)?sslmode=disable
 API_PORT ?= 8080
 
+# UI image for local build/push. Build for linux/amd64 so GKE (amd64) can pull the same tag.
+UI_IMAGE ?= ghcr.io/arverma/config-manager-ui:0.1.3
+DOCKER_PLATFORM ?= linux/amd64
+
 .PHONY: help
 help:
 	@printf "\nTargets:\n"
@@ -29,7 +27,6 @@ help:
 	@printf "  db-down           Stop Postgres\n"
 	@printf "  db-reset          Stop Postgres + delete volume\n"
 	@printf "  db-psql           Open psql shell\n"
-	@printf "  db-apply          [Deprecated] Apply schema without API; prefer 'make api-run' (API runs migrations on startup)\n"
 	@printf "  db-drop-schema    Drop + recreate public schema (destructive)\n"
 	@printf "\n"
 	@printf "  api-run           Run Go API (PORT=$(API_PORT))\n"
@@ -43,6 +40,9 @@ help:
 	@printf "  ui-typecheck      TypeScript check (ui/)\n"
 	@printf "  ui-check          Lint + typecheck (ui/)\n"
 	@printf "  ui-build          Build UI (Next)\n"
+	@printf "  ui-image-build    Build UI Docker image for $(DOCKER_PLATFORM) ($(UI_IMAGE))\n"
+	@printf "  ghcr-login        Log in to ghcr.io using .env (GITHUB_USER, GITHUB_TOKEN)\n"
+	@printf "  ui-publish        Build UI image and push to ghcr.io (run make ghcr-login first)\n"
 	@printf "\n"
 	@printf "  fmt               Format backend code\n"
 	@printf "  lint              Lint/typecheck (ui) + vet (api)\n"
@@ -77,12 +77,6 @@ db-reset:
 .PHONY: db-psql
 db-psql:
 	PGPASSWORD=$(DB_PASS) psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME)
-
-.PHONY: db-apply
-# Deprecated: API runs migrations on startup (backend/migrations/). Use 'make api-run' to apply. If db/schema.sql exists, this applies it without starting the API.
-db-apply:
-	@if [ ! -f "db/schema.sql" ]; then echo "db/schema.sql not found; run 'make api-run' to apply migrations on startup."; exit 1; fi
-	PGPASSWORD=$(DB_PASS) psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME) -f "db/schema.sql"
 
 .PHONY: db-drop-schema
 db-drop-schema:
@@ -128,6 +122,19 @@ ui-check:
 .PHONY: ui-build
 ui-build:
 	cd ui && npm run build
+
+.PHONY: ui-image-build
+ui-image-build:
+	docker build --platform $(DOCKER_PLATFORM) -t $(UI_IMAGE) -f ui/Dockerfile ui/
+
+.PHONY: ui-publish
+ui-publish: ui-image-build
+	docker push $(UI_IMAGE)
+
+.PHONY: ghcr-login
+ghcr-login:
+	@test -f .env || (echo "Create .env from .env.example (GITHUB_USER, GITHUB_TOKEN)"; exit 1)
+	@. ./.env && echo "$$GITHUB_TOKEN" | docker login ghcr.io -u "$$GITHUB_USER" --password-stdin
 
 .PHONY: fmt
 fmt: api-fmt

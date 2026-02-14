@@ -1,0 +1,5 @@
+# Production overrides. Use: helm install -f values-prod.yaml ...
+# Overrides api.appConfigPath for production.
+
+api:
+  appConfigPath: "files/prod-application.yaml"

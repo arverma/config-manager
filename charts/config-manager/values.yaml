@@ -9,27 +9,22 @@ api:
   imagePullSecrets: []
   service:
     port: 8080
-    # Service type (ClusterIP default). In a parent chart, set config-manager.api.service.type: LoadBalancer
-    # to expose via external IP when not using Ingress.
+    # ClusterIP default; set to LoadBalancer in parent to expose without Ingress.
     type: ClusterIP
   externalSecret:
-    # If enabled, an ExternalSecret is created that extracts ALL key/value pairs
-    # from a Vault path into a Kubernetes Secret, and the API pod can `envFrom` it.
+    # When enabled, ESO syncs Vault path into a Secret; API uses envFrom.
     enabled: false
-    # Target Secret name (if empty, defaults to "<chart-fullname>-api-secrets")
     name: ""
     refreshInterval: "30s"
     clusterSecretStore:
       name: ""
       kind: "ClusterSecretStore"
-    # Vault path (remote secret key) to extract from.
     vaultPath: ""
   env:
-    # Mount API under /api for path-based ingress
     HTTP_BASE_PATH: "/api"
-    # Set to "*" or a comma-separated list of allowed UI origins.
-    # With path-based same-origin requests, CORS is typically not needed.
-    CORS_ALLOWED_ORIGINS: "*"
+    CORS_ALLOWED_ORIGINS: "*"  # "*" or comma list; often unnecessary with same-origin
+  # Chart path to application.yaml (ConfigMap). Production: use values-prod.yaml with appConfigPath: "files/prod-application.yaml".
+  appConfigPath: "files/qa-application.yaml"
   resources: {}
 
 ui:
@@ -40,26 +35,21 @@ ui:
   imagePullSecrets: []
   service:
     port: 3000
-    # Service type (ClusterIP default). In a parent chart, set config-manager.ui.service.type: LoadBalancer
-    # to get an external IP when DNS/Ingress is not available; UI URL is then http://<EXTERNAL-IP>:3000.
+    # ClusterIP default; LoadBalancer in parent for external IP when not using Ingress.
     type: ClusterIP
   resources: {}
 
 database:
-  # Recommended: provide an existing secret containing DATABASE_URL
-  existingSecretName: ""
+  existingSecretName: ""  # Secret with DATABASE_URL (recommended)
   existingSecretKey: "DATABASE_URL"
-
-  # Alternative (recommended with Vault): pass DB_* parts as plain values and
-  # source DB_PASSWORD (and any other secrets) via api.externalSecret + envFrom.
+  # Or use parts (DB_HOST, etc.) and supply DB_PASSWORD via api.externalSecret.
   parts:
     host: ""
     port: 5432
     name: ""
     user: ""
     sslmode: ""
-  # Optional: create a secret from a plaintext URL (not recommended for production)
-  url: ""
+  url: ""  # Plaintext URL (not for production)
 
 ingress:
   enabled: false
