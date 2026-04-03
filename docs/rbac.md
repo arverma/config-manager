@@ -3,7 +3,7 @@
 This project will eventually support **two user experiences**:
 
 - **Viewer**: browse and read configs (and versions) only
-- **Developer**: create namespaces/configs and write new versions
+- **Developer**: create/update/delete namespaces and configs (and versions, within API rules)
 
 ## Why this matters now
 
@@ -29,7 +29,9 @@ All viewer permissions, plus:
 - `POST /namespaces`
 - `POST /configs/{namespace}/{path}`
 - `PUT /configs/{namespace}/{path}`
+- `DELETE /configs/{namespace}/{path}` (hard delete)
 - `DELETE /configs/{namespace}/{path}/versions/{version}` (non-latest only)
+- `DELETE /namespaces/{namespace}` (allowed only when empty)
 
 ## Authn/Authz approach (later)
 

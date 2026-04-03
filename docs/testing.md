@@ -52,8 +52,8 @@ to start Postgres from Go tests. This adds a dependency but simplifies developer
 - **Pagination correctness**
   - `GET /configs?recursive=false` cursor correctness (no skips/duplicates)
   - `GET /namespaces/{namespace}/browse` cursor correctness
-- **Soft delete semantics (configs)**
-  - After `DELETE /configs/{namespace}/{path}`, config is hidden from list/browse and `GET /configs/{namespace}/{path}` returns 404
+- **Config delete semantics (hard delete)**
+  - After `DELETE /configs/{namespace}/{path}`, config is removed and `GET /configs/{namespace}/{path}` returns 404
 - **Version rules**
   - Cannot delete latest version
   - `PUT` returns 409 with `code=no_change` when body is unchanged

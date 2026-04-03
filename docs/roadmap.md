@@ -8,8 +8,8 @@
 ## Next
 
 - [ ] **(2) Backend confidence (small investment, big contributor value)**
-  - Add a tiny integration-test baseline: 3–6 high-value tests around create/update/versioning + soft-delete behavior
+  - Add a tiny integration-test baseline: 3–6 high-value tests around create/update/versioning + hard deletes
   - Add CI “check” pipeline: run `make check` on PRs
 
-- [ ] **(3) Packaging / “Airflow-style” distribution (when you’re ready)**
-  - Docker images + Helm chart: build/publish `api` + `ui` images and ship a simple chart (service, ingress, env wiring, probes using `/healthz` + `/readyz`)
+- [ ] **(3) Packaging polish**
+  - Chart + GHCR images already publish on `v*` tags; refine values, docs, and parent-chart overrides as needed

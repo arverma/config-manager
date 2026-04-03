@@ -30,10 +30,12 @@ Once published, the chart can be installed via `helm repo add`:
 helm repo add config-manager https://<org>.github.io/<repo>
 helm repo update
 
-helm install config-manager config-manager/config-manager --version 0.1.0 \
+helm install config-manager config-manager/config-manager --version <chart-version> \
   --set ingress.enabled=true \
   --set ingress.host=example.com
 ```
+
+Current chart version in this repo: `0.1.2` (see `charts/config-manager/Chart.yaml`).
 
 Install with an external Postgres `DATABASE_URL` secret (simplest):
 
@@ -65,7 +67,7 @@ In this mode, store the Postgres password in Vault as `DB_PASSWORD` (so it becom
 
 ## Publishing (release tag)
 
-On push of a tag `v*` (e.g. `v0.1.0`), GitHub Actions:
+On push of a tag `v*` (e.g. `v0.1.4`), GitHub Actions (`.github/workflows/release-chart.yaml`):
 
 1. **Helm chart**: Publishes the chart to the `gh-pages` branch (Helm repo at `https://<org>.github.io/<repo>/index.yaml`).
 2. **Docker images**: Builds and pushes API and UI images to GHCR (`ghcr.io/<org>/config-manager-api`, `ghcr.io/<org>/config-manager-ui`) with the same version tag (e.g. `0.1.0`) and `latest`.
@@ -105,7 +107,7 @@ docker push "$LOCATION-docker.pkg.dev/$PROJECT/$REPO/config-manager-ui:dev"
 Helm 3 supports pushing charts to OCI registries:
 
 ```bash
-export CHART_VERSION=0.1.0
+export CHART_VERSION=0.1.2
 
 helm package ./charts/config-manager --version "$CHART_VERSION"
 helm push "config-manager-$CHART_VERSION.tgz" "oci://$LOCATION-docker.pkg.dev/$PROJECT/$REPO/charts"
