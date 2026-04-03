@@ -38,8 +38,8 @@ The Go backend currently has minimal automated coverage. High‑ROI tests to add
 - **Pagination correctness**
   - `GET /configs?recursive=false` cursor correctness (no skips/duplicates)
   - `GET /namespaces/{namespace}/browse` cursor correctness
-- **Soft delete semantics (configs)**
-  - After `DELETE /configs/{namespace}/{path}`, config is hidden from list/browse and `GET /configs/{namespace}/{path}` returns 404
+- **Config delete semantics (hard delete)**
+  - After `DELETE /configs/{namespace}/{path}`, config is removed and `GET /configs/{namespace}/{path}` returns 404
 - **Version rules**
   - `DELETE /configs/{namespace}/{path}/versions/{version}` cannot delete latest
   - `PUT /configs/{namespace}/{path}` returns 409 with `code=no_change` when body is unchanged
@@ -51,7 +51,7 @@ See `docs/testing.md` for the recommended test harness approach.
 - `api/openapi.yaml`: API contract (update when behavior changes)
 - `backend/`: Go API
 - `ui/`: Next.js UI
-- `db/`: legacy schema reference; source of truth is `backend/migrations/` (API runs these on startup)
+- `backend/migrations/`: schema source of truth (API runs these on startup)
 - `docs/`: architecture and operational docs
 
 ## Conventions

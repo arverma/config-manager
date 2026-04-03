@@ -23,6 +23,8 @@ Or (instead of `DATABASE_URL`), provide:
 - `HTTP_BASE_PATH`: URL prefix (e.g. `/api`, default: empty)
 - `CORS_ALLOWED_ORIGINS`: comma-separated list (default: `http://localhost:3000`)
 
+Helm sets typical defaults under `api.env` in [`charts/config-manager/values.yaml`](../charts/config-manager/values.yaml) (e.g. `HTTP_BASE_PATH`, `CORS_ALLOWED_ORIGINS`).
+
 ## UI (Next.js)
 
 The UI serves `/api/*` via a Route Handler that proxies to the Go API at request time.

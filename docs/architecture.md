@@ -12,6 +12,8 @@ This document describes the initial architecture, data flow, and versioning mode
 
 Identity is **(namespace, path)**. `format` is an attribute of the config (either JSON or YAML, never both for the same identity).
 
+Namespace/name validation allows letters, digits, underscore, and hyphen: `^[a-zA-Z0-9_-]+$`.
+
 ## High-level component diagram
 
 ```mermaid
@@ -164,7 +166,7 @@ The UI supports comparing versions with diff highlighting to help users reason a
 
 ## Future: viewer vs developer roles
 
-See `docs/rbac.md` for how we’ll introduce read-only vs write access (API + UI) without breaking the URL/path model.
+See [rbac.md](rbac.md) for planned read-only vs write access (API + UI) without changing the URL model.
 
 ## SDK strategy (future)
 

@@ -9,7 +9,7 @@ make db-up
 make api-run
 ```
 
-The API applies migrations on startup; no separate schema step needed.
+The API runs migrations on startup; no separate schema step.
 
 Terminal 2:
 

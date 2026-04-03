@@ -1,6 +1,6 @@
 # Config Manager
 
-Config Manager is a powerful, open source platform for managing and versioning configuration data at scale. It features a Postgres-backed registry with immutable versioning, a modern web UI for browsing and editing configs with audit history.
+Open-source config registry: Postgres-backed immutable versions, REST API, and a web UI for browse/edit and version history.
 
 ![Config editor](docs/images/config_editor.png)
 

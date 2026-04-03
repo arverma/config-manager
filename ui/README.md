@@ -6,6 +6,8 @@ Minimal UI scaffolded to mirror the REST URL shape:
 
 ## Run locally
 
+From repo root, `make ui-dev` runs `npm run dev` and copies `.env.example` → `.env.local`. Or from `ui/`:
+
 ```bash
 npm install
 cp .env.example .env.local
