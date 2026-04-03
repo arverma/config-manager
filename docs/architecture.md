@@ -6,6 +6,7 @@ This document describes the initial architecture, data flow, and versioning mode
 
 - A **namespace** is an explicit container you can create even with 0 configs.
 - A **logical config** is addressed like a folder path: `/configs/{namespace}/{path}`
+- Path examples assume the API root; when `HTTP_BASE_PATH` is set (e.g. `/api`), prefix routes (see [environment-variables.md](environment-variables.md)).
 - The UI path mirrors the API path (namespace + folder-like path) and offers Vault-like browsing.
 - Each change creates an **immutable version**
 - **Latest** is always the most recently saved version (i.e. the maximum version number).
@@ -38,8 +39,10 @@ flowchart LR
   ApiService -->|"SQL"| Postgres
 
   OpenAPI --> SdkGen
-  ApiService -->|"serves contract"| OpenAPI
+  ApiService -->|"implements"| OpenAPI
 ```
+
+The API contract is [`api/openapi.yaml`](../api/openapi.yaml) in the repo (tooling/SDKs); the running service does not host that file over HTTP.
 
 ## Postgres model (conceptual)
 
