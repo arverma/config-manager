@@ -1,5 +1,7 @@
 # Config Manager
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 Open-source config registry: Postgres-backed immutable versions, REST API, and a web UI for browse/edit and version history.
 
 ![Config editor](docs/images/config_editor.png)
@@ -67,3 +69,7 @@ Open the UI at `http://localhost:3000` (API is `http://localhost:8080`).
 - `make check`: backend tests + UI lint/typecheck
 - `make smoke`: quick API smoke test
 - `make db-reset`: reset local Postgres volume
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the full license text. Project attribution is in [NOTICE](NOTICE).
