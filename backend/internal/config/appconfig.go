@@ -100,6 +100,87 @@ func Int(key string, defaultVal int) int {
 	}
 }
 
+// Bool returns the boolean at the given dot-separated key.
+func Bool(key string, defaultVal bool) bool {
+	if store == nil {
+		return defaultVal
+	}
+	v, ok := getNested(store, key)
+	if !ok {
+		return defaultVal
+	}
+	switch b := v.(type) {
+	case bool:
+		return b
+	case string:
+		switch strings.ToLower(strings.TrimSpace(b)) {
+		case "1", "true", "yes", "on":
+			return true
+		case "0", "false", "no", "off":
+			return false
+		default:
+			return defaultVal
+		}
+	default:
+		return defaultVal
+	}
+}
+
+// String returns the string at the given dot-separated key.
+func String(key string, defaultVal string) string {
+	if store == nil {
+		return defaultVal
+	}
+	v, ok := getNested(store, key)
+	if !ok {
+		return defaultVal
+	}
+	switch s := v.(type) {
+	case string:
+		if strings.TrimSpace(s) == "" {
+			return defaultVal
+		}
+		return s
+	default:
+		return defaultVal
+	}
+}
+
+// StringSlice returns a string slice at the given dot-separated key.
+func StringSlice(key string) []string {
+	if store == nil {
+		return nil
+	}
+	v, ok := getNested(store, key)
+	if !ok {
+		return nil
+	}
+	switch arr := v.(type) {
+	case []any:
+		out := make([]string, 0, len(arr))
+		for _, item := range arr {
+			if s, ok := item.(string); ok {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					out = append(out, s)
+				}
+			}
+		}
+		return out
+	case []string:
+		out := make([]string, 0, len(arr))
+		for _, s := range arr {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 func getNested(m map[string]any, key string) (any, bool) {
 	var current any = m
 	start := 0

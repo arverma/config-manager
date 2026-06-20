@@ -56,3 +56,17 @@ ingress:
   tls:
     enabled: false
     secretName: ""
+
+auth:
+  enabled: false
+  allowedEmailDomains: []
+  google:
+    existingSecretName: ""
+    redirectUrl: ""
+    homeDomain: ""
+  session:
+    cookieSecure: false
+    idleTimeoutMinutes: 480
+    absoluteTimeoutHours: 24
+  apiKeys:
+    existingSecretName: ""

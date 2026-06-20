@@ -5,11 +5,33 @@
   - Removed duplicated UI types in `ConfigEditor` + `NamespaceBrowserView`
   - Standardized invalidations after create/update/delete
 
+- [x] **(4) Authentication v1** (done 2026-06)
+  - Google OAuth in the Go API with domain allowlist
+  - Postgres-backed sessions (sliding idle timeout) and API keys (`cm_live_...`)
+  - Server-side `created_by`; Helm `auth.*` values and secrets; UI auth gate
+  - See [`docs/auth.md`](auth.md)
+
+## Partially done
+
+- [ ] **(2) Backend confidence**
+  - Auth tests landed (`backend/internal/auth/*_test.go`, `backend/internal/httpapi/auth_integration_test.go`)
+  - Still missing: pagination, hard-delete, and version-rule integration tests
+  - Still missing: CI “check” pipeline (`make check` on PRs)
+
 ## Next
 
-- [ ] **(2) Backend confidence (small investment, big contributor value)**
-  - Add a tiny integration-test baseline: 3–6 high-value tests around create/update/versioning + hard deletes
-  - Add CI “check” pipeline: run `make check` on PRs
+- [ ] **(2) Backend confidence** (finish)
+  - Add high-value integration tests: pagination cursors, hard deletes, version rules (`no_change`, cannot delete latest)
+  - Add GitHub Actions workflow to run `make check` on pull requests
 
 - [ ] **(3) Packaging polish**
-  - Chart + GHCR images already publish on `v*` tags; refine values, docs, and parent-chart overrides as needed
+  - Chart + GHCR images already publish on `v*` tags
+  - Document auth in Helm install examples; refine parent-chart override patterns (see [config-manager-ops](https://github.com/arverma/config-manager-ops))
+
+- [ ] **(5) RBAC v2**
+  - Viewer vs developer roles; optional per-namespace / per-path ACL
+  - See [`docs/rbac.md`](rbac.md)
+
+- [ ] **(6) SDK expansion**
+  - Java SDK shipped separately: [config-manager-java-sdk](https://github.com/arverma/config-manager-java-sdk)
+  - Go/Python clients from `api/openapi.yaml` remain future work

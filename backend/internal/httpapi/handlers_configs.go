@@ -170,6 +170,10 @@ func handleCreateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return
 	}
+	createdBy, err := resolveCreatedBy(req, body.CreatedBy, authEnabled())
+	if writeCreatedByError(w, err) {
+		return
+	}
 	if body.BodyRaw == "" {
 		writeError(w, http.StatusBadRequest, "bad_request", "body_raw is required", map[string]any{"field": "body_raw"})
 		return
@@ -236,7 +240,7 @@ func handleCreateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		INSERT INTO config_versions (config_id, version, body_raw, body_json, created_by, comment, content_sha256, request_id, user_agent, source_ip)
 		VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, created_at
-	`, cfgID, body.BodyRaw, json.RawMessage(parsedJSON), body.CreatedBy, body.Comment, sha, reqID, userAgent, sourceIP).Scan(&latestVersionID, &versionCreatedAt)
+	`, cfgID, body.BodyRaw, json.RawMessage(parsedJSON), createdBy, body.Comment, sha, reqID, userAgent, sourceIP).Scan(&latestVersionID, &versionCreatedAt)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "insert version failed", nil)
 		return
@@ -267,7 +271,7 @@ func handleCreateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		ID:            uuidToString(latestVersionID),
 		Version:       1,
 		CreatedAt:     versionCreatedAt.Time,
-		CreatedBy:     body.CreatedBy,
+		CreatedBy:     createdBy,
 		Comment:       body.Comment,
 		ContentSHA256: ptr(sha),
 		BodyRaw:       body.BodyRaw,
@@ -290,6 +294,10 @@ func handleUpdateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 	}
 	if err := decodeJSONBody(w, req, &body, maxConfigBodyBytes); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
+		return
+	}
+	createdBy, err := resolveCreatedBy(req, body.CreatedBy, authEnabled())
+	if writeCreatedByError(w, err) {
 		return
 	}
 	if body.BodyRaw == "" {
@@ -390,7 +398,7 @@ func handleUpdateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		INSERT INTO config_versions (config_id, version, body_raw, body_json, created_by, comment, content_sha256, request_id, user_agent, source_ip)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at
-	`, cfgID, nextVersion, body.BodyRaw, json.RawMessage(parsedJSON), body.CreatedBy, body.Comment, sha, reqID, userAgent, sourceIP).Scan(&newVerID, &createdAt)
+	`, cfgID, nextVersion, body.BodyRaw, json.RawMessage(parsedJSON), createdBy, body.Comment, sha, reqID, userAgent, sourceIP).Scan(&newVerID, &createdAt)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "insert version failed", nil)
 		return
@@ -411,7 +419,7 @@ func handleUpdateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		ID:            uuidToString(newVerID),
 		Version:       nextVersion,
 		CreatedAt:     createdAt.Time,
-		CreatedBy:     body.CreatedBy,
+		CreatedBy:     createdBy,
 		Comment:       body.Comment,
 		ContentSHA256: ptr(sha),
 		BodyRaw:       body.BodyRaw,

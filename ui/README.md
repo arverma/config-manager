@@ -20,3 +20,14 @@ npm run dev
 - `NEXT_PUBLIC_CONFIG_API_BASE_URL` is the server-side fallback when `CONFIG_API_BASE_URL` is unset. See `docs/environment-variables.md` for all UI env vars.
 - For full local setup (DB + API + UI), see the root `README.md`.
 
+## Authentication
+
+When the API has `auth.enabled=true`:
+
+- `AuthGate` (in `src/components/AuthGate.tsx`) checks `GET /api/auth/session` on load.
+- Unauthenticated users are redirected to `/api/auth/login/google`.
+- `ConfigsHeader` shows the signed-in email and a Logout button.
+
+Local dev uses auth **off** by default (`auth.enabled: false` in `backend/confs/application.yaml`), so no sign-in is required. In production (same-origin `/api/*` via ingress), session cookies are sent automatically on API calls.
+
+See [`../docs/auth.md`](../docs/auth.md) for enabling auth locally or in Helm.

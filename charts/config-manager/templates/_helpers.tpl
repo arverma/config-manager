@@ -51,3 +51,34 @@ API secrets Secret name (created by ESO when enabled).
 {{- end -}}
 {{- end -}}
 
+{{/*
+Google OAuth secret name for auth credentials.
+*/}}
+{{- define "config-manager.authGoogleSecretName" -}}
+{{- .Values.auth.google.existingSecretName -}}
+{{- end -}}
+
+{{/*
+API keys secret name for machine clients.
+*/}}
+{{- define "config-manager.authAPIKeysSecretName" -}}
+{{- .Values.auth.apiKeys.existingSecretName -}}
+{{- end -}}
+
+{{/*
+OAuth redirect URL for Google callback.
+*/}}
+{{- define "config-manager.authRedirectUrl" -}}
+{{- if .Values.auth.google.redirectUrl -}}
+{{- .Values.auth.google.redirectUrl -}}
+{{- else if .Values.ingress.host -}}
+{{- $scheme := "http" -}}
+{{- if .Values.ingress.tls.enabled -}}
+{{- $scheme = "https" -}}
+{{- end -}}
+{{- printf "%s://%s/api/auth/callback/google" $scheme .Values.ingress.host -}}
+{{- else -}}
+{{- "" -}}
+{{- end -}}
+{{- end -}}
+

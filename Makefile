@@ -21,6 +21,19 @@ DOCKER_PLATFORM ?= linux/amd64
 
 .PHONY: help
 help:
+	@printf "Config Manager\n\n"
+	@printf "Quick start (two terminals):\n"
+	@printf "  make db-up && make api-run   # terminal 1\n"
+	@printf "  make ui-dev                  # terminal 2\n\n"
+	@printf "Common:\n"
+	@printf "  make check     tests + lint\n"
+	@printf "  make smoke     API smoke test\n"
+	@printf "  make dev       print workflow\n\n"
+	@printf "Database:  db-up  db-down  db-reset  db-psql\n\n"
+	@printf "All targets:  make help-all\n"
+
+.PHONY: help-all
+help-all:
 	@printf "\nTargets:\n"
 	@printf "  dev               Print local dev workflow\n"
 	@printf "  db-up             Start Postgres (docker compose)\n"

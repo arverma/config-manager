@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"config-manager/internal/auth"
 	"config-manager/internal/config"
 
 	"github.com/go-chi/chi/v5"
@@ -15,7 +16,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewRouter(db *pgxpool.Pool) http.Handler {
+func NewRouter(db *pgxpool.Pool, authSvc *auth.Service) http.Handler {
+	SetAuthService(authSvc)
+
 	r := chi.NewRouter()
 
 	basePath := normalizeBasePath(os.Getenv("HTTP_BASE_PATH"))
@@ -31,6 +34,15 @@ func NewRouter(db *pgxpool.Pool) http.Handler {
 	api.Use(middleware.Logger)
 
 	api.Use(corsMiddleware(parseAllowedOriginsEnv()))
+
+	if authSvc != nil {
+		authHandlers := auth.NewHandlers(authSvc, AuthJSONWriter())
+		api.Use(authHandlers.Middleware(basePath))
+		api.Get("/auth/login/google", authHandlers.LoginGoogle)
+		api.Get("/auth/callback/google", authHandlers.CallbackGoogle)
+		api.Get("/auth/session", authHandlers.Session)
+		api.Post("/auth/logout", authHandlers.Logout)
+	}
 
 	api.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})

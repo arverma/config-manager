@@ -15,7 +15,7 @@ make db-up
 make api-run
 ```
 
-(The API runs DB migrations on startup.)
+(The API runs DB migrations on startup. Authentication is **disabled by default** — see [`docs/auth.md`](docs/auth.md) to enable it locally.)
 
 Terminal 2:
 
@@ -33,7 +33,9 @@ make smoke
 
 ## Testing roadmap (backend)
 
-The Go backend currently has minimal automated coverage. High‑ROI tests to add next:
+**Landed:** auth unit and integration tests (`backend/internal/auth/*_test.go`, `backend/internal/httpapi/auth_integration_test.go`).
+
+**Still wanted:** high‑ROI tests beyond auth:
 
 - **Pagination correctness**
   - `GET /configs?recursive=false` cursor correctness (no skips/duplicates)
@@ -44,7 +46,7 @@ The Go backend currently has minimal automated coverage. High‑ROI tests to add
   - `DELETE /configs/{namespace}/{path}/versions/{version}` cannot delete latest
   - `PUT /configs/{namespace}/{path}` returns 409 with `code=no_change` when body is unchanged
 
-See `docs/testing.md` for the recommended test harness approach.
+See [`docs/testing.md`](docs/testing.md) for the recommended test harness approach.
 
 ## Project structure
 
@@ -60,4 +62,3 @@ See `docs/testing.md` for the recommended test harness approach.
 - **DB changes**: add versioned migrations under `backend/migrations/` (e.g. `000002_description.up.sql` and `.down.sql`); document in the PR.
 - **Go**: keep handlers small; prefer shared helpers over copy/paste.
 - **UI**: prefer shared hooks/utilities over per-component fetch logic.
-
