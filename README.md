@@ -52,10 +52,15 @@ make ui-dev
 
 Open the UI at `http://localhost:3000` (API is `http://localhost:8080`).
 
+Authentication is **off by default** locally. For production, enable Google OAuth and API keys via Helm — see [`docs/auth.md`](docs/auth.md).
+
 ## Docs
 
 - [`api/openapi.yaml`](api/openapi.yaml): API contract (source of truth)
 - Postman tip: import [`api/openapi.yaml`](api/openapi.yaml) to generate a collection (see [`docs/development.md`](docs/development.md))
+- [`docs/auth.md`](docs/auth.md): Google OAuth and API keys
+- [`docs/roadmap.md`](docs/roadmap.md): done work and pending backlog
+- [`docs/rbac.md`](docs/rbac.md): RBAC v2 plans (viewer/developer roles)
 - [`docs/architecture.md`](docs/architecture.md): architecture + versioning model
 - [`docs/development.md`](docs/development.md): local workflow
 - [`docs/deployment.md`](docs/deployment.md): production notes + checklist
@@ -65,7 +70,7 @@ Open the UI at `http://localhost:3000` (API is `http://localhost:8080`).
 
 ## Common commands
 
-- `make help`: list all targets
+- `make help`: quick reference (`make help-all` for every target)
 - `make check`: backend tests + UI lint/typecheck
 - `make smoke`: quick API smoke test
 - `make db-reset`: reset local Postgres volume

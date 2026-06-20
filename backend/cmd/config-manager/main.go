@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"config-manager/internal/auth"
 	"config-manager/internal/commons"
 	"config-manager/internal/config"
 	"config-manager/internal/httpapi"
@@ -26,6 +28,62 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "auth" {
+		if len(os.Args) < 3 {
+			log.Fatal("usage: config-manager auth create-api-key --name <name>")
+		}
+		switch os.Args[2] {
+		case "create-api-key":
+			runCreateAPIKey(os.Args[3:])
+		default:
+			log.Fatalf("unknown auth subcommand: %s", os.Args[2])
+		}
+		return
+	}
+
+	runServer()
+}
+
+func runCreateAPIKey(args []string) {
+	fs := flag.NewFlagSet("create-api-key", flag.ExitOnError)
+	configPath := fs.String("config", "", "path to application.yaml")
+	name := fs.String("name", "", "API key name")
+	_ = fs.Parse(args)
+
+	if err := config.Load(*configPath); err != nil {
+		log.Fatalf("config: %v", err)
+	}
+
+	if strings.TrimSpace(*name) == "" {
+		log.Fatal("--name is required")
+	}
+
+	ctx := context.Background()
+	databaseURL, err := databaseURLFromEnv()
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		log.Fatalf("connect postgres: %v", err)
+	}
+	defer pool.Close()
+
+	if err := runMigrations(databaseURL); err != nil {
+		log.Fatalf("migrate: %v", err)
+	}
+
+	store := auth.NewAPIKeyStore(pool)
+	rawKey, err := store.CreateKey(ctx, *name)
+	if err != nil {
+		log.Fatalf("create api key: %v", err)
+	}
+
+	fmt.Println(rawKey)
+}
+
+func runServer() {
 	configPath := flag.String("config", "", "path to application.yaml (server, DB retry, timeouts); overridden by CONFIG_MANAGER_* env vars")
 	flag.Parse()
 
@@ -61,6 +119,15 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
+	authSvc, err := auth.NewService(pool)
+	if err != nil {
+		log.Fatalf("auth: %v", err)
+	}
+	if authSvc.Enabled() {
+		log.Printf("authentication enabled")
+		go runSessionCleanup(ctx, authSvc)
+	}
+
 	readHeaderTimeout := time.Duration(config.Int("api.server.readHeaderTimeoutSeconds", 5)) * time.Second
 	readTimeout := time.Duration(config.Int("api.server.readTimeoutSeconds", 30)) * time.Second
 	writeTimeout := time.Duration(config.Int("api.server.writeTimeoutSeconds", 30)) * time.Second
@@ -69,7 +136,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           httpapi.NewRouter(pool),
+		Handler:           httpapi.NewRouter(pool, authSvc),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
@@ -90,6 +157,19 @@ func main() {
 	defer cancel()
 
 	_ = srv.Shutdown(shutdownCtx)
+}
+
+func runSessionCleanup(ctx context.Context, authSvc *auth.Service) {
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			authSvc.CleanupExpired(context.Background())
+		}
+	}
 }
 
 func runMigrations(databaseURL string) error {

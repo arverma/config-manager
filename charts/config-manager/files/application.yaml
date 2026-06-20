@@ -14,3 +14,20 @@ api:
   databaseRetry:
     maxAttempts: 5
     retryBackoffSeconds: 2
+
+auth:
+  enabled: {{ .Values.auth.enabled }}
+  allowedEmailDomains:
+{{- range .Values.auth.allowedEmailDomains }}
+    - {{ . | quote }}
+{{- end }}
+  google:
+    redirectUrl: {{ include "config-manager.authRedirectUrl" . | quote }}
+    homeDomain: {{ .Values.auth.google.homeDomain | default "" | quote }}
+  session:
+    cookieName: cm_session
+    cookieSecure: {{ if hasKey .Values.auth.session "cookieSecure" }}{{ .Values.auth.session.cookieSecure }}{{ else }}{{ .Values.ingress.tls.enabled }}{{ end }}
+    idleTimeoutMinutes: {{ .Values.auth.session.idleTimeoutMinutes | default 480 }}
+    absoluteTimeoutHours: {{ .Values.auth.session.absoluteTimeoutHours | default 24 }}
+  apiKeys:
+    bootstrapFromEnv: true

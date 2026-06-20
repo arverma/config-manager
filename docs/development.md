@@ -24,6 +24,10 @@ make ui-dev
 - `make smoke`: quick API smoke test
 - `make db-reset`: reset DB volume
 
+## Authentication
+
+Auth is **disabled by default** (`auth.enabled: false` in `backend/confs/application.yaml`). Local dev needs no sign-in. To test Google OAuth locally or configure production auth, see [`docs/auth.md`](auth.md).
+
 ## Postman collection (from OpenAPI)
 
 You can generate a Postman collection instantly by importing our OpenAPI spec:

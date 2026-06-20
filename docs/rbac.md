@@ -1,20 +1,26 @@
-# RBAC (Future)
+# RBAC
 
-This project will eventually support **two user experiences**:
+## v1 (current): authentication only
+
+When `auth.enabled=true`:
+
+- **Browser users** sign in with Google OAuth (allowed email domains only).
+- **Machine clients** use API keys (`Authorization: Bearer cm_live_...`).
+- Any authenticated principal can read and write all namespaces and configs.
+
+See [auth.md](auth.md) for setup.
+
+## v2 (planned): roles and scoped access
+
+Future releases will add:
 
 - **Viewer**: browse and read configs (and versions) only
-- **Developer**: create/update/delete namespaces and configs (and versions, within API rules)
+- **Developer**: create/update/delete namespaces and configs (within API rules)
+- Optional scoping: per namespace, per path prefix
 
-## Why this matters now
+### Proposed permissions model
 
-Even before auth is added, we keep the API/UI structure compatible with RBAC by:
-
-- Keeping **read** operations cleanly separated from **write** operations
-- Making the UI a thin client over the REST API, so feature gating is straightforward
-
-## Proposed permissions model
-
-### Viewer (read-only)
+#### Viewer (read-only)
 
 - `GET /namespaces`
 - `GET /namespaces/{namespace}/browse?prefix=...`
@@ -22,7 +28,7 @@ Even before auth is added, we keep the API/UI structure compatible with RBAC by:
 - `GET /configs/{namespace}/{path}/versions`
 - `GET /configs/{namespace}/{path}/versions/{version}`
 
-### Developer (write)
+#### Developer (write)
 
 All viewer permissions, plus:
 
@@ -33,15 +39,8 @@ All viewer permissions, plus:
 - `DELETE /configs/{namespace}/{path}/versions/{version}` (non-latest only)
 - `DELETE /namespaces/{namespace}` (allowed only when empty)
 
-## Authn/Authz approach (later)
+## Design notes
 
-When we introduce authentication (JWT/OIDC or API keys), we can add:
+The API/UI structure keeps read and write operations separated so role gating can be added without changing the URL model. Authorization will map actor → role(s) → endpoint access in Go middleware.
 
-- A middleware in the Go API that resolves an **actor** (user/service)
-- An authorization layer that maps actor → role(s) → endpoint access
-- Optional scoping rules:
-  - per namespace
-  - per path prefix
-
-The OpenAPI contract should remain stable; only auth headers and error responses (401/403) will be added.
-
+The OpenAPI contract should remain stable; auth uses session cookies and bearer API keys with standard `401`/`403` responses.

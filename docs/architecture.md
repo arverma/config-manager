@@ -167,13 +167,25 @@ The UI supports comparing versions with diff highlighting to help users reason a
 - Both sides are editable.
 - Clicking **Save new version** on either side creates a **new immutable version** from that panel’s content (becoming latest).
 
-## Future: viewer vs developer roles
+## Authentication (v1)
+
+When `auth.enabled=true` (default is `false` for local dev):
+
+- **Browser users** sign in via Google OAuth (`GET /auth/login/google`), receive an httpOnly session cookie, and call `/api/*` same-origin.
+- **Machine clients** (SDKs, CI/CD) use API keys: `Authorization: Bearer cm_live_...`.
+- All routes except health checks and OAuth login/callback require authentication.
+- `created_by` on config versions is set server-side from the authenticated identity.
+
+See [auth.md](auth.md) for setup. Role-based access (viewer vs developer) is planned for v2 — see [rbac.md](rbac.md).
+
+## RBAC v2 (planned)
 
 See [rbac.md](rbac.md) for planned read-only vs write access (API + UI) without changing the URL model.
 
-## SDK strategy (future)
+## SDK strategy
 
 - Treat `api/openapi.yaml` as the **source of truth**.
-- Generate client SDKs (Go/Python/Scala) from OpenAPI.
+- **Java SDK** is published separately: [config-manager-java-sdk](https://github.com/arverma/config-manager-java-sdk) (`io.github.arverma:config-manager-java-sdk` on Maven Central).
+- Go/Python clients from OpenAPI remain future work.
 - If a generated client is not idiomatic, keep a thin wrapper to expose a stable, friendly surface to pipelines/services.
 

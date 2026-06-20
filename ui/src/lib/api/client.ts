@@ -1,4 +1,5 @@
 import { getConfigApiBaseUrl } from "@/lib/configApi";
+import { redirectToLogin } from "@/lib/auth";
 
 export type ApiError = {
   code?: string;
@@ -73,11 +74,29 @@ export async function apiFetch<T>(
 
   const res = await fetch(url, {
     cache: "no-store",
+    credentials: "include",
     ...init,
     headers: {
       ...(init?.headers ?? {}),
     },
   });
+
+  if (res.status === 401 && typeof window !== "undefined") {
+    const session = await fetch("/api/auth/session", {
+      cache: "no-store",
+      credentials: "include",
+    })
+      .then(async (r) => (r.ok ? ((await r.json()) as { auth_enabled?: boolean }) : null))
+      .catch(() => null);
+    if (session?.auth_enabled !== false) {
+      redirectToLogin();
+    }
+    throw new HttpError({
+      status: 401,
+      message: "Authentication required",
+      code: "unauthorized",
+    });
+  }
 
   if (!res.ok) {
     const parsed = await parseApiError(res);
@@ -112,11 +131,29 @@ function joinBaseAndPath(baseUrl: string, path: string): string {
 async function apiFetchAbsolute<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     cache: "no-store",
+    credentials: "include",
     ...init,
     headers: {
       ...(init?.headers ?? {}),
     },
   });
+
+  if (res.status === 401 && typeof window !== "undefined") {
+    const session = await fetch("/api/auth/session", {
+      cache: "no-store",
+      credentials: "include",
+    })
+      .then(async (r) => (r.ok ? ((await r.json()) as { auth_enabled?: boolean }) : null))
+      .catch(() => null);
+    if (session?.auth_enabled !== false) {
+      redirectToLogin();
+    }
+    throw new HttpError({
+      status: 401,
+      message: "Authentication required",
+      code: "unauthorized",
+    });
+  }
 
   if (!res.ok) {
     const parsed = await parseApiError(res);

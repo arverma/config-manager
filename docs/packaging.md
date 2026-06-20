@@ -22,6 +22,36 @@ docker build -t config-manager-ui:dev ./ui
 
 Chart source: `charts/config-manager/`
 
+### Authentication (production)
+
+Auth is **disabled by default** (`auth.enabled: false`). For production, enable Google OAuth and API keys via chart values. See [`docs/auth.md`](auth.md) for full setup.
+
+Key values in [`charts/config-manager/values.yaml`](../charts/config-manager/values.yaml):
+
+| Value | Purpose |
+|-------|---------|
+| `auth.enabled` | Turn on authentication |
+| `auth.allowedEmailDomains` | Email domains allowed to sign in |
+| `auth.google.existingSecretName` | Secret with `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
+| `auth.apiKeys.existingSecretName` | Secret with `AUTH_API_KEYS` |
+| `ingress.host` | Used to derive OAuth redirect URL when `auth.google.redirectUrl` is empty |
+
+Example with auth:
+
+```bash
+helm install config-manager ./charts/config-manager \
+  --set ingress.enabled=true \
+  --set ingress.host=config.example.com \
+  --set ingress.tls.enabled=true \
+  --set auth.enabled=true \
+  --set auth.allowedEmailDomains={example.com} \
+  --set auth.google.existingSecretName=config-manager-oauth \
+  --set auth.apiKeys.existingSecretName=config-manager-api-keys \
+  --set database.existingSecretName=config-manager-db
+```
+
+Parent charts (e.g. [config-manager-ops](https://github.com/arverma/config-manager-ops)) override these under the `config-manager:` subchart key.
+
 ## Install from the public Helm repo (GitHub Pages)
 
 Once published, the chart can be installed via `helm repo add`:

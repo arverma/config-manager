@@ -11,10 +11,40 @@ make db-up
 make api-run
 ```
 
-The API runs DB migrations on startup (from `backend/migrations/`).
+The API runs DB migrations on startup (from `backend/migrations/`). Authentication is disabled by default; see [`../docs/auth.md`](../docs/auth.md).
 
 ## Health
 
 - `GET /healthz`: liveness
 - `GET /readyz`: readiness (checks Postgres reachability)
 
+When `HTTP_BASE_PATH=/api`, prefix paths with `/api` (e.g. `/api/healthz`).
+
+## Authentication routes
+
+When `auth.enabled=true`:
+
+| Route | Purpose |
+|-------|---------|
+| `GET /auth/login/google` | Redirect to Google OAuth (`?returnTo=` optional) |
+| `GET /auth/callback/google` | OAuth callback; sets session cookie |
+| `GET /auth/session` | Current session (or `{ auth_enabled: false }` when auth off) |
+| `POST /auth/logout` | Clear application session |
+
+Protected routes accept either a session cookie or `Authorization: Bearer cm_live_...`.
+
+## CLI
+
+Create an API key (requires database access):
+
+```bash
+DATABASE_URL='postgres://...' go run ./cmd/config-manager auth create-api-key --name ci-pipeline
+```
+
+Prints `cm_live_<secret>` once.
+
+## Migrations
+
+Schema migrations live in `backend/migrations/`. Notable:
+
+- `000003_auth` — `auth_sessions`, `auth_oauth_states`, `api_keys`

@@ -30,4 +30,9 @@ In this mode, the UI calls the API using same-origin paths (e.g. `fetch("/api/na
   - Logs collected centrally
 - UI
   - Prefer path-based routing so the browser can call `/api/*` (no public env needed).
+- Authentication (production)
+  - Enable `auth.enabled` in Helm; store Google OAuth credentials and API keys in Secrets.
+  - Register OAuth redirect URI: `https://<host>/api/auth/callback/google`
+  - Restrict access with `auth.allowedEmailDomains`
+  - See [auth.md](auth.md)
 

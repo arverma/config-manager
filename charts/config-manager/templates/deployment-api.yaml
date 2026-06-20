@@ -23,6 +23,9 @@ spec:
       {{- end }}
       {{ $basePath := (.Values.api.env.HTTP_BASE_PATH | default "/api") }}
       {{ $apiSecretsEnabled := and .Values.api.externalSecret .Values.api.externalSecret.enabled }}
+      {{ $authGoogleSecret := .Values.auth.google.existingSecretName }}
+      {{ $authAPIKeysSecret := .Values.auth.apiKeys.existingSecretName }}
+      {{ $authRedirectURL := include "config-manager.authRedirectUrl" . }}
       containers:
         - name: api
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
@@ -33,10 +36,20 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.api.service.port | int }}
-          {{- if $apiSecretsEnabled }}
+          {{- if or $apiSecretsEnabled $authGoogleSecret $authAPIKeysSecret }}
           envFrom:
+            {{- if $apiSecretsEnabled }}
             - secretRef:
                 name: {{ include "config-manager.apiSecretName" . | quote }}
+            {{- end }}
+            {{- if $authGoogleSecret }}
+            - secretRef:
+                name: {{ $authGoogleSecret | quote }}
+            {{- end }}
+            {{- if $authAPIKeysSecret }}
+            - secretRef:
+                name: {{ $authAPIKeysSecret | quote }}
+            {{- end }}
           {{- end }}
           env:
             - name: PORT
@@ -45,6 +58,14 @@ spec:
               value: {{ $basePath | quote }}
             - name: CORS_ALLOWED_ORIGINS
               value: {{ .Values.api.env.CORS_ALLOWED_ORIGINS | default "*" | quote }}
+            {{- if and .Values.auth.enabled $authRedirectURL }}
+            - name: AUTH_REDIRECT_URL
+              value: {{ $authRedirectURL | quote }}
+            {{- end }}
+            {{- if and .Values.auth.enabled $authGoogleSecret }}
+            - name: AUTH_GOOGLE_HOME_DOMAIN
+              value: {{ .Values.auth.google.homeDomain | default "" | quote }}
+            {{- end }}
             {{- if .Values.database.parts.host }}
             - name: DB_HOST
               value: {{ .Values.database.parts.host | quote }}

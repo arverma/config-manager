@@ -21,6 +21,8 @@ servers:
 tags:
   - name: Health
     description: Health and readiness probes.
+  - name: Auth
+    description: Google OAuth browser login, session checks, and logout.
   - name: Namespaces
     description: Manage namespaces and browse paths.
   - name: Configs
@@ -69,11 +71,70 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /auth/login/google:
+    get:
+      tags: [Auth]
+      summary: Start Google OAuth login
+      operationId: authLoginGoogle
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          schema:
+            type: string
+            example: /configs
+      responses:
+        "302":
+          description: Redirect to Google OAuth consent screen.
+
+  /auth/callback/google:
+    get:
+      tags: [Auth]
+      summary: Google OAuth callback
+      operationId: authCallbackGoogle
+      responses:
+        "302":
+          description: Redirect to the original UI path with a session cookie set.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /auth/session:
+    get:
+      tags: [Auth]
+      summary: Current session
+      operationId: authSession
+      responses:
+        "200":
+          description: Session details (or auth disabled).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Log out of Config Manager
+      description: Clears the application session cookie only (does not sign out of Google).
+      operationId: authLogout
+      security:
+        - sessionCookie: []
+      responses:
+        "204":
+          description: Logged out.
+
   /namespaces:
     get:
       tags: [Namespaces]
       summary: List namespaces
       operationId: listNamespaces
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
@@ -411,6 +472,18 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Authentication required when auth is enabled.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Authenticated but not allowed (for example email domain not allowlisted).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     NotFound:
       description: Not found.
       content:
@@ -521,9 +594,6 @@ components:
           description: Raw YAML or JSON string (must match `format` in this request).
         comment:
           type: string
-        created_by:
-          type: string
-          description: Optional actor label (useful before auth is added).
 
     UpdateConfigRequest:
       type: object
@@ -533,8 +603,6 @@ components:
           type: string
           description: Raw YAML or JSON string (must match the config's stored format).
         comment:
-          type: string
-        created_by:
           type: string
         base_version:
           type: integer
@@ -683,4 +751,32 @@ components:
         next_cursor:
           type: string
           nullable: true
+
+    AuthSessionResponse:
+      type: object
+      required: [authenticated]
+      properties:
+        authenticated:
+          type: boolean
+        auth_enabled:
+          type: boolean
+          description: False when authentication is disabled in server config.
+        email:
+          type: string
+        actor_type:
+          type: string
+          enum: [user, apikey]
+        actor_id:
+          type: string
+
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: cm_session
+      description: Browser session established after Google OAuth login.
+    bearerApiKey:
+      type: http
+      scheme: bearer
+      description: Machine client API key (`cm_live_...`).
 
