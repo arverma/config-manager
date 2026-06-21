@@ -58,7 +58,7 @@ See [`docs/testing.md`](docs/testing.md) for the recommended test harness approa
 
 ## Conventions
 
-- **API changes**: update `api/openapi.yaml` in the same PR.
+- **API changes**: update `api/openapi.yaml` in the same PR; bump `info.version` when the contract changes in a client-visible way.
 - **DB changes**: add versioned migrations under `backend/migrations/` (e.g. `000002_description.up.sql` and `.down.sql`); document in the PR.
 - **Go**: keep handlers small; prefer shared helpers over copy/paste.
 - **UI**: prefer shared hooks/utilities over per-component fetch logic.

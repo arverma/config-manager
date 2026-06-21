@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Config Manager API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     A Postgres-backed config registry with immutable versioning and a selectable "latest" version.
 
