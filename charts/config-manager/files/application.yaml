@@ -31,3 +31,12 @@ auth:
     absoluteTimeoutHours: {{ .Values.auth.session.absoluteTimeoutHours | default 24 }}
   apiKeys:
     bootstrapFromEnv: true
+
+cache:
+  enabled: {{ .Values.cache.enabled }}
+  redis:
+    host: {{ .Values.cache.redis.host | default "" | quote }}
+    port: {{ .Values.cache.redis.port | default 6379 }}
+    keyPrefix: {{ .Values.cache.redis.keyPrefix | default "cm:" | quote }}
+  config:
+    ttlSeconds: {{ .Values.cache.config.ttlSeconds | default 3600 }}

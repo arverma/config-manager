@@ -108,6 +108,12 @@ API keys are stored hashed in Postgres. Keys can also be bootstrapped from the `
 
 When authentication is enabled, `created_by` on config versions is **set by the server** from the authenticated identity (user email or `apikey:<name>`). Clients must not send `created_by`; doing so returns `400 client_created_by_not_allowed`.
 
+## Session storage
+
+By default (`cache.enabled=false`), browser sessions are stored in Postgres (`auth_sessions`).
+
+When [Redis caching](caching.md) is enabled (`cache.enabled=true`), sessions and OAuth state are stored in Redis instead. Existing Postgres sessions are not migrated — enabling cache logs users out once.
+
 ## Local development
 
 Keep `auth.enabled: false` (default) for the standard two-terminal workflow (`make api-run`, `make ui-dev`).

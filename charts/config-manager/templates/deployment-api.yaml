@@ -25,6 +25,7 @@ spec:
       {{ $apiSecretsEnabled := and .Values.api.externalSecret .Values.api.externalSecret.enabled }}
       {{ $authGoogleSecret := .Values.auth.google.existingSecretName }}
       {{ $authAPIKeysSecret := .Values.auth.apiKeys.existingSecretName }}
+      {{ $cacheRedisSecret := .Values.cache.redis.existingSecretName }}
       {{ $authRedirectURL := include "config-manager.authRedirectUrl" . }}
       containers:
         - name: api
@@ -36,7 +37,7 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.api.service.port | int }}
-          {{- if or $apiSecretsEnabled $authGoogleSecret $authAPIKeysSecret }}
+          {{- if or $apiSecretsEnabled $authGoogleSecret $authAPIKeysSecret $cacheRedisSecret }}
           envFrom:
             {{- if $apiSecretsEnabled }}
             - secretRef:
@@ -49,6 +50,10 @@ spec:
             {{- if $authAPIKeysSecret }}
             - secretRef:
                 name: {{ $authAPIKeysSecret | quote }}
+            {{- end }}
+            {{- if and .Values.cache.enabled $cacheRedisSecret }}
+            - secretRef:
+                name: {{ $cacheRedisSecret | quote }}
             {{- end }}
           {{- end }}
           env:
@@ -65,6 +70,12 @@ spec:
             {{- if and .Values.auth.enabled $authGoogleSecret }}
             - name: AUTH_GOOGLE_HOME_DOMAIN
               value: {{ .Values.auth.google.homeDomain | default "" | quote }}
+            {{- end }}
+            {{- if and .Values.cache.enabled .Values.cache.redis.host }}
+            - name: REDIS_HOST
+              value: {{ .Values.cache.redis.host | quote }}
+            - name: REDIS_PORT
+              value: {{ (.Values.cache.redis.port | default 6379) | quote }}
             {{- end }}
             {{- if .Values.database.parts.host }}
             - name: DB_HOST

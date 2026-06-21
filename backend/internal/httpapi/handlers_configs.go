@@ -13,6 +13,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"config-manager/internal/cache"
 )
 
 const (
@@ -135,10 +137,20 @@ func handleListConfigs(w http.ResponseWriter, req *http.Request, db *pgxpool.Poo
 	writeJSON(w, http.StatusOK, ConfigListResponse{Items: items, NextCursor: next})
 }
 
-func handleGetLatestConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Pool) {
+func handleGetLatestConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Pool, cacheSvc *cache.Service) {
 	namespace, path, ok := getNamespaceAndPath(w, req)
 	if !ok {
 		return
+	}
+
+	if cacheSvc != nil && cacheSvc.Enabled() {
+		if payload, hit, err := cacheSvc.GetLatestConfig(req.Context(), namespace, path); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "cache read failed", nil)
+			return
+		} else if hit {
+			writeCachedJSON(w, http.StatusOK, payload)
+			return
+		}
 	}
 
 	cfg, ver, err := storeGetConfigAndLatest(req.Context(), db, namespace, path)
@@ -151,10 +163,16 @@ func handleGetLatestConfig(w http.ResponseWriter, req *http.Request, db *pgxpool
 		return
 	}
 
-	writeJSON(w, http.StatusOK, GetConfigResponse{Config: cfg, Latest: ver})
+	resp := GetConfigResponse{Config: cfg, Latest: ver}
+	if cacheSvc != nil && cacheSvc.Enabled() {
+		if payload, err := json.Marshal(resp); err == nil {
+			_ = cacheSvc.SetLatestConfig(req.Context(), namespace, path, payload)
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
-func handleCreateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Pool) {
+func handleCreateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Pool, cacheSvc *cache.Service) {
 	namespace, path, ok := getNamespaceAndPath(w, req)
 	if !ok {
 		return
@@ -258,6 +276,8 @@ func handleCreateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		return
 	}
 
+	invalidateLatestConfigCache(req.Context(), cacheSvc, namespace, path)
+
 	cfg := Config{
 		ID:              uuidToString(cfgID),
 		Namespace:       namespace,
@@ -280,7 +300,7 @@ func handleCreateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 	writeJSON(w, http.StatusCreated, GetConfigResponse{Config: cfg, Latest: ver})
 }
 
-func handleUpdateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Pool) {
+func handleUpdateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Pool, cacheSvc *cache.Service) {
 	namespace, path, ok := getNamespaceAndPath(w, req)
 	if !ok {
 		return
@@ -413,6 +433,8 @@ func handleUpdateConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		writeError(w, http.StatusInternalServerError, "internal_error", "commit failed", nil)
 		return
 	}
+
+	invalidateLatestConfigCache(req.Context(), cacheSvc, namespace, path)
 
 	cfg.LatestVersionID = ptr(uuidToString(newVerID))
 	ver := ConfigVersion{
@@ -587,7 +609,7 @@ func handleDeleteConfigVersion(w http.ResponseWriter, req *http.Request, db *pgx
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func handleDeleteConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Pool) {
+func handleDeleteConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Pool, cacheSvc *cache.Service) {
 	namespace, path, ok := getNamespaceAndPath(w, req)
 	if !ok {
 		return
@@ -633,6 +655,7 @@ func handleDeleteConfig(w http.ResponseWriter, req *http.Request, db *pgxpool.Po
 		return
 	}
 
+	invalidateLatestConfigCache(req.Context(), cacheSvc, namespace, path)
 	w.WriteHeader(http.StatusNoContent)
 }
 

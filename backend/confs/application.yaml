@@ -31,3 +31,12 @@ auth:
     absoluteTimeoutHours: 24
   apiKeys:
     bootstrapFromEnv: true
+
+cache:
+  enabled: false
+  redis:
+    host: ""
+    port: 6379
+    keyPrefix: "cm:"
+  config:
+    ttlSeconds: 3600

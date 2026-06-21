@@ -52,6 +52,20 @@ helm install config-manager ./charts/config-manager \
 
 Parent charts (e.g. [config-manager-ops](https://github.com/arverma/config-manager-ops)) override these under the `config-manager:` subchart key.
 
+### Redis caching (production, optional)
+
+Caching is **disabled by default** (`cache.enabled: false`). For multi-replica API deployments, enable external Redis. See [`docs/caching.md`](caching.md).
+
+| Value | Purpose |
+|-------|---------|
+| `cache.enabled` | Turn on Redis caching and Redis-backed sessions |
+| `cache.redis.host` | External Redis hostname or IP |
+| `cache.redis.port` | Redis port (default `6379`) |
+| `cache.redis.existingSecretName` | Secret with `REDIS_PASSWORD` (or `REDIS_URL`) |
+| `cache.config.ttlSeconds` | Safety TTL for cached GET latest responses |
+
+No Bitnami Redis subchart is bundled — use your own managed or self-hosted Redis.
+
 ## Install from the public Helm repo (GitHub Pages)
 
 Once published, the chart can be installed via `helm repo add`:

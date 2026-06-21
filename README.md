@@ -59,6 +59,7 @@ Authentication is **off by default** locally. For production, enable Google OAut
 - [`api/openapi.yaml`](api/openapi.yaml): API contract (source of truth)
 - Postman tip: import [`api/openapi.yaml`](api/openapi.yaml) to generate a collection (see [`docs/development.md`](docs/development.md))
 - [`docs/auth.md`](docs/auth.md): Google OAuth and API keys
+- [`docs/caching.md`](docs/caching.md): optional Redis caching (config + sessions)
 - [`docs/roadmap.md`](docs/roadmap.md): done work and pending backlog
 - [`docs/rbac.md`](docs/rbac.md): RBAC v2 plans (viewer/developer roles)
 - [`docs/architecture.md`](docs/architecture.md): architecture + versioning model

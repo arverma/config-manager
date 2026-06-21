@@ -38,13 +38,15 @@ flowchart LR
   end
 
   subgraph storage [Storage]
-    Postgres["Postgres configs + auth tables"]
+    Postgres["Postgres configs + API keys"]
+    Redis["External Redis optional cache + sessions"]
   end
 
   BrowserUI -->|"same-origin /api REST + session cookie"| ApiService
   Services -->|"Bearer cm_live API key"| ApiService
   ApiService -->|"OAuth login/callback"| Google
   ApiService -->|"SQL"| Postgres
+  ApiService -->|"when cache.enabled"| Redis
 
   OpenAPI -->|"generate at release"| JavaSDK
   ApiService -->|"implements"| OpenAPI
@@ -115,6 +117,8 @@ erDiagram
 ```
 
 Config data (`namespaces`, `configs`, `config_versions`) is separate from auth data (`auth_sessions`, `auth_oauth_states`, `api_keys`, migration `000003_auth`).
+
+When `cache.enabled=true`, sessions and OAuth state use Redis instead of `auth_sessions` / `auth_oauth_states`. API keys remain in Postgres. See [caching.md](caching.md).
 
 ## Versioning semantics
 
