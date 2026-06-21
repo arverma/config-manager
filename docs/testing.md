@@ -13,10 +13,11 @@ This project is early-stage and intentionally lightweight.
 
 | Package | Files | Notes |
 |---------|-------|-------|
-| `backend/internal/auth` | `allowlist_test.go`, `paths_test.go`, `apikeys_test.go` | Unit tests |
+| `backend/internal/auth` | `allowlist_test.go`, `paths_test.go`, `apikeys_test.go`, `sessions_redis_test.go` | Unit tests (Redis via miniredis) |
+| `backend/internal/cache` | `configcache_test.go` | Unit tests (miniredis) |
 | `backend/internal/httpapi` | `auth_integration_test.go` | Requires Postgres; skips if unavailable |
 
-Auth integration tests run migrations and use `httpapi.NewRouter(pool, authSvc)`.
+Auth integration tests run migrations and use `httpapi.NewRouter(pool, authSvc, nil)`.
 
 ## Backend test harness (recommended approach)
 
@@ -32,8 +33,8 @@ Strategy:
 - Create a temporary database per test run (or per package)
 - Run migrations (the API runs them on startup, or run the same migrations from `backend/migrations/` in test setup)
 - Create a `pgxpool.Pool` to that DB
-- Create an `auth.Service` with `auth.NewService(pool)` when testing auth paths
-- Use `httptest.NewServer(httpapi.NewRouter(pool, authSvc))` to run request/response tests
+- Create an `auth.Service` with `auth.NewService(pool, cacheSvc)` when testing auth paths (`cacheSvc` may be `nil` when cache is disabled)
+- Use `httptest.NewServer(httpapi.NewRouter(pool, authSvc, cacheSvc))` to run request/response tests
 
 Suggested setup steps in tests:
 

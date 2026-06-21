@@ -38,7 +38,7 @@ api:
 
 	pool := testPoolOrSkip(t)
 	defer pool.Close()
-	authSvc, err := auth.NewService(pool)
+	authSvc, err := auth.NewService(pool, nil)
 	if err != nil {
 		t.Fatalf("auth service: %v", err)
 	}
@@ -46,7 +46,7 @@ api:
 		t.Skip("test expects auth.enabled=false")
 	}
 
-	handler := NewRouter(pool, authSvc)
+	handler := NewRouter(pool, authSvc, nil)
 	req := httptest.NewRequest(http.MethodGet, "/namespaces", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -84,7 +84,7 @@ api:
 		t.Fatalf("config load: %v", err)
 	}
 
-	authSvc, err := auth.NewService(pool)
+	authSvc, err := auth.NewService(pool, nil)
 	if err != nil {
 		t.Fatalf("auth service: %v", err)
 	}
@@ -92,7 +92,7 @@ api:
 		t.Fatal("expected auth enabled")
 	}
 
-	handler := NewRouter(pool, authSvc)
+	handler := NewRouter(pool, authSvc, nil)
 	req := httptest.NewRequest(http.MethodGet, "/namespaces", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -131,7 +131,7 @@ api:
 		t.Fatalf("config load: %v", err)
 	}
 
-	authSvc, err := auth.NewService(pool)
+	authSvc, err := auth.NewService(pool, nil)
 	if err != nil {
 		t.Fatalf("auth service: %v", err)
 	}
@@ -142,7 +142,7 @@ api:
 		t.Fatalf("create api key: %v", err)
 	}
 
-	handler := NewRouter(pool, authSvc)
+	handler := NewRouter(pool, authSvc, nil)
 	req := httptest.NewRequest(http.MethodGet, "/namespaces", nil)
 	req.Header.Set("Authorization", "Bearer "+rawKey)
 	rec := httptest.NewRecorder()
@@ -179,12 +179,12 @@ api:
 		t.Fatalf("config load: %v", err)
 	}
 
-	authSvc, err := auth.NewService(pool)
+	authSvc, err := auth.NewService(pool, nil)
 	if err != nil {
 		t.Fatalf("auth service: %v", err)
 	}
 
-	handler := NewRouter(pool, authSvc)
+	handler := NewRouter(pool, authSvc, nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

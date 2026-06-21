@@ -8,7 +8,7 @@
 When `HTTP_BASE_PATH=/api` (recommended for single-domain, path-based ingress):
 
 - `GET /api/healthz`
-- `GET /api/readyz` (checks Postgres reachability)
+- `GET /api/readyz` (checks Postgres reachability; checks Redis when `cache.enabled=true`)
 
 ## Path-based routing (recommended)
 
@@ -35,4 +35,8 @@ In this mode, the UI calls the API using same-origin paths (e.g. `fetch("/api/na
   - Register OAuth redirect URI: `https://<host>/api/auth/callback/google`
   - Restrict access with `auth.allowedEmailDomains`
   - See [auth.md](auth.md)
+- Caching (production, optional)
+  - Enable `cache.enabled` for multi-replica API deployments with external Redis.
+  - Store `REDIS_PASSWORD` (or `REDIS_URL`) in a Secret; set `cache.redis.host` / `port` in values (no in-chart Redis).
+  - See [caching.md](caching.md)
 

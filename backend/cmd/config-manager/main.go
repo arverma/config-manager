@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"config-manager/internal/auth"
+	"config-manager/internal/cache"
 	"config-manager/internal/commons"
 	"config-manager/internal/config"
 	"config-manager/internal/httpapi"
@@ -119,13 +120,24 @@ func runServer() {
 		log.Fatalf("migrate: %v", err)
 	}
 
-	authSvc, err := auth.NewService(pool)
+	cacheSvc, err := cache.New()
+	if err != nil {
+		log.Fatalf("cache: %v", err)
+	}
+	defer cacheSvc.Close()
+	if cacheSvc.Enabled() {
+		log.Printf("redis cache enabled")
+	}
+
+	authSvc, err := auth.NewService(pool, cacheSvc)
 	if err != nil {
 		log.Fatalf("auth: %v", err)
 	}
 	if authSvc.Enabled() {
 		log.Printf("authentication enabled")
-		go runSessionCleanup(ctx, authSvc)
+		if !authSvc.SessionsUseRedis() {
+			go runSessionCleanup(ctx, authSvc)
+		}
 	}
 
 	readHeaderTimeout := time.Duration(config.Int("api.server.readHeaderTimeoutSeconds", 5)) * time.Second
@@ -136,7 +148,7 @@ func runServer() {
 
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           httpapi.NewRouter(pool, authSvc),
+		Handler:           httpapi.NewRouter(pool, authSvc, cacheSvc),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,

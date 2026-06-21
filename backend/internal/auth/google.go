@@ -11,19 +11,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
 
 type GoogleAuth struct {
-	cfg    Config
-	db     *pgxpool.Pool
-	oauth  *oauth2.Config
-	store  *SessionStore
+	cfg         Config
+	oauth       *oauth2.Config
+	sessions    SessionStore
+	oauthStates OAuthStateStore
 }
 
-func NewGoogleAuth(cfg Config, db *pgxpool.Pool, sessions *SessionStore) *GoogleAuth {
+func NewGoogleAuth(cfg Config, sessions SessionStore, oauthStates OAuthStateStore) *GoogleAuth {
 	oauthCfg := &oauth2.Config{
 		ClientID:     cfg.Google.ClientID,
 		ClientSecret: cfg.Google.ClientSecret,
@@ -31,7 +30,7 @@ func NewGoogleAuth(cfg Config, db *pgxpool.Pool, sessions *SessionStore) *Google
 		Scopes:       []string{"openid", "email", "profile"},
 		Endpoint:     google.Endpoint,
 	}
-	return &GoogleAuth{cfg: cfg, db: db, oauth: oauthCfg, store: sessions}
+	return &GoogleAuth{cfg: cfg, oauth: oauthCfg, sessions: sessions, oauthStates: oauthStates}
 }
 
 func (g *GoogleAuth) LoginURL(ctx context.Context, returnTo string) (string, error) {
@@ -49,7 +48,7 @@ func (g *GoogleAuth) LoginURL(ctx context.Context, returnTo string) (string, err
 }
 
 func (g *GoogleAuth) HandleCallback(ctx context.Context, code, state string) (Session, string, error) {
-	returnTo, err := g.consumeOAuthState(ctx, state)
+	returnTo, err := g.oauthStates.ConsumeOAuthState(ctx, state)
 	if err != nil {
 		return Session{}, "", err
 	}
@@ -68,7 +67,7 @@ func (g *GoogleAuth) HandleCallback(ctx context.Context, code, state string) (Se
 		return Session{}, "", err
 	}
 
-	session, err := g.store.CreateUserSession(ctx, email)
+	session, err := g.sessions.CreateUserSession(ctx, email)
 	if err != nil {
 		return Session{}, "", err
 	}
@@ -91,42 +90,10 @@ func (g *GoogleAuth) createOAuthState(ctx context.Context, returnTo string) (str
 	state := base64.RawURLEncoding.EncodeToString(buf)
 	expiresAt := time.Now().UTC().Add(oauthStateTTLMin * time.Minute)
 
-	_, err := g.db.Exec(ctx, `
-		INSERT INTO auth_oauth_states (state, return_to, expires_at)
-		VALUES ($1, $2, $3)
-	`, state, returnTo, expiresAt)
-	if err != nil {
-		return "", fmt.Errorf("store oauth state: %w", err)
+	if err := g.oauthStates.CreateOAuthState(ctx, state, returnTo, expiresAt); err != nil {
+		return "", err
 	}
 	return state, nil
-}
-
-func (g *GoogleAuth) consumeOAuthState(ctx context.Context, state string) (string, error) {
-	state = strings.TrimSpace(state)
-	if state == "" {
-		return "", fmt.Errorf("missing oauth state")
-	}
-
-	var returnTo string
-	var expiresAt time.Time
-	err := g.db.QueryRow(ctx, `
-		SELECT return_to, expires_at
-		FROM auth_oauth_states
-		WHERE state = $1
-	`, state).Scan(&returnTo, &expiresAt)
-	if err != nil {
-		return "", fmt.Errorf("invalid oauth state")
-	}
-
-	_, _ = g.db.Exec(ctx, `DELETE FROM auth_oauth_states WHERE state = $1`, state)
-
-	if time.Now().UTC().After(expiresAt) {
-		return "", fmt.Errorf("oauth state expired")
-	}
-	if returnTo == "" {
-		returnTo = "/"
-	}
-	return returnTo, nil
 }
 
 func (g *GoogleAuth) fetchGoogleEmail(ctx context.Context, accessToken string) (string, error) {

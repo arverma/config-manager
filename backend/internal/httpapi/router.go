@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"config-manager/internal/auth"
+	"config-manager/internal/cache"
 	"config-manager/internal/config"
 
 	"github.com/go-chi/chi/v5"
@@ -16,7 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewRouter(db *pgxpool.Pool, authSvc *auth.Service) http.Handler {
+func NewRouter(db *pgxpool.Pool, authSvc *auth.Service, cacheSvc *cache.Service) http.Handler {
 	SetAuthService(authSvc)
 
 	r := chi.NewRouter()
@@ -54,6 +55,12 @@ func NewRouter(db *pgxpool.Pool, authSvc *auth.Service) http.Handler {
 			writeError(w, http.StatusServiceUnavailable, "not_ready", "database not reachable", nil)
 			return
 		}
+		if cacheSvc != nil && cacheSvc.Enabled() {
+			if err := cacheSvc.Ping(ctx); err != nil {
+				writeError(w, http.StatusServiceUnavailable, "not_ready", "redis not reachable", nil)
+				return
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
 
@@ -89,19 +96,19 @@ func NewRouter(db *pgxpool.Pool, authSvc *auth.Service) http.Handler {
 	api.Route("/configs/{namespace}", func(r chi.Router) {
 		r.Route("/{path:.*}", func(r chi.Router) {
 			r.Get("/", func(w http.ResponseWriter, req *http.Request) {
-				handleGetLatestConfig(w, req, db)
+				handleGetLatestConfig(w, req, db, cacheSvc)
 			})
 
 			r.Post("/", func(w http.ResponseWriter, req *http.Request) {
-				handleCreateConfig(w, req, db)
+				handleCreateConfig(w, req, db, cacheSvc)
 			})
 
 			r.Put("/", func(w http.ResponseWriter, req *http.Request) {
-				handleUpdateConfig(w, req, db)
+				handleUpdateConfig(w, req, db, cacheSvc)
 			})
 
 			r.Delete("/", func(w http.ResponseWriter, req *http.Request) {
-				handleDeleteConfig(w, req, db)
+				handleDeleteConfig(w, req, db, cacheSvc)
 			})
 
 			r.Get("/versions", func(w http.ResponseWriter, req *http.Request) {

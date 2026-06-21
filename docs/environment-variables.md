@@ -45,6 +45,23 @@ Config file keys (under `auth`):
 - `auth.session.cookieName`, `cookieSecure`, `idleTimeoutMinutes`, `absoluteTimeoutHours`
 - `auth.apiKeys.bootstrapFromEnv`: load `AUTH_API_KEYS` at startup (default: `true`)
 
+### Caching (when `cache.enabled=true`)
+
+Set in `application.yaml` under `cache.*` or via `CONFIG_MANAGER_CACHE_*` env overrides. See [caching.md](caching.md).
+
+Secrets (recommended via Kubernetes Secret, not plain values):
+
+- `REDIS_URL`: full Redis connection URL (optional; overrides host/port/password)
+- `REDIS_HOST`: external Redis hostname or IP (Helm sets from `cache.redis.host`)
+- `REDIS_PORT`: Redis port (default: `6379`)
+- `REDIS_PASSWORD`: Redis password
+
+Config file keys (under `cache`):
+
+- `cache.enabled`: `true` / `false` (default: `false`)
+- `cache.redis.host`, `cache.redis.port`, `cache.redis.keyPrefix`
+- `cache.config.ttlSeconds`: safety TTL for cached GET latest responses (default: `3600`)
+
 ## UI (Next.js)
 
 The UI serves `/api/*` via a Route Handler that proxies to the Go API at request time.

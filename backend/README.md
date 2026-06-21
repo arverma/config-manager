@@ -11,7 +11,7 @@ make db-up
 make api-run
 ```
 
-The API runs DB migrations on startup (from `backend/migrations/`). Authentication is disabled by default; see [`../docs/auth.md`](../docs/auth.md).
+The API runs DB migrations on startup (from `backend/migrations/`). Authentication and Redis caching are disabled by default; see [`../docs/auth.md`](../docs/auth.md) and [`../docs/caching.md`](../docs/caching.md).
 
 ## Health
 

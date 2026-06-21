@@ -70,3 +70,14 @@ auth:
     absoluteTimeoutHours: 24
   apiKeys:
     existingSecretName: ""
+
+cache:
+  enabled: false
+  redis:
+    host: ""                    # external Redis hostname/IP (prod); no Bitnami subchart
+    port: 6379
+    existingSecretName: ""      # Secret with REDIS_PASSWORD (or REDIS_URL)
+    existingSecretKey: "REDIS_PASSWORD"
+    keyPrefix: "cm:"
+  config:
+    ttlSeconds: 3600

@@ -11,6 +11,12 @@
   - Server-side `created_by`; Helm `auth.*` values and secrets; UI auth gate
   - See [`docs/auth.md`](auth.md)
 
+- [x] **(7) Optional Redis caching** (done 2026-06)
+  - Disabled by default; external Redis when `cache.enabled=true` (no Bitnami subchart)
+  - GET latest config cache-aside with write invalidation; sessions + OAuth state in Redis when enabled
+  - Helm `cache.*` values; credentials via Secret / ESO
+  - See [`docs/caching.md`](caching.md)
+
 ## Partially done
 
 - [ ] **(2) Backend confidence**

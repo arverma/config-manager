@@ -7,33 +7,47 @@ import (
 	"strings"
 	"time"
 
+	"config-manager/internal/cache"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Service coordinates authentication for the API.
 type Service struct {
-	cfg       Config
-	db        *pgxpool.Pool
-	sessions  *SessionStore
-	apiKeys   *APIKeyStore
-	google    *GoogleAuth
+	cfg      Config
+	db       *pgxpool.Pool
+	sessions SessionStore
+	apiKeys  *APIKeyStore
+	google   *GoogleAuth
 }
 
-func NewService(db *pgxpool.Pool) (*Service, error) {
+func NewService(db *pgxpool.Pool, cacheSvc *cache.Service) (*Service, error) {
 	cfg, err := LoadConfig()
 	if err != nil {
 		return nil, err
 	}
 
+	var sessions SessionStore
+	var oauthStates OAuthStateStore
+
+	if cacheSvc != nil && cacheSvc.Enabled() {
+		rdb := cacheSvc.Redis()
+		sessions = NewRedisSessionStore(rdb, cfg, cacheSvc.KeyPrefix())
+		oauthStates = NewRedisOAuthStateStore(rdb, cacheSvc.KeyPrefix())
+	} else {
+		sessions = NewPostgresSessionStore(db, cfg)
+		oauthStates = NewPostgresOAuthStateStore(db)
+	}
+
 	svc := &Service{
 		cfg:      cfg,
 		db:       db,
-		sessions: NewSessionStore(db, cfg),
+		sessions: sessions,
 		apiKeys:  NewAPIKeyStore(db),
 	}
 
 	if cfg.Enabled {
-		svc.google = NewGoogleAuth(cfg, db, svc.sessions)
+		svc.google = NewGoogleAuth(cfg, sessions, oauthStates)
 		if cfg.APIKeys.BootstrapFromEnv {
 			if err := svc.apiKeys.BootstrapFromEnv(context.Background()); err != nil {
 				return nil, err
@@ -50,6 +64,10 @@ func (s *Service) Enabled() bool {
 
 func (s *Service) Config() Config {
 	return s.cfg
+}
+
+func (s *Service) SessionsUseRedis() bool {
+	return s.sessions.UsesRedis()
 }
 
 func (s *Service) CreateAPIKey(ctx context.Context, name string) (string, error) {

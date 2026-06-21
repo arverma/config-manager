@@ -12,21 +12,23 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type SessionStore struct {
+type PostgresSessionStore struct {
 	db  *pgxpool.Pool
 	cfg Config
 }
 
-func NewSessionStore(db *pgxpool.Pool, cfg Config) *SessionStore {
-	return &SessionStore{db: db, cfg: cfg}
+func NewPostgresSessionStore(db *pgxpool.Pool, cfg Config) *PostgresSessionStore {
+	return &PostgresSessionStore{db: db, cfg: cfg}
 }
+
+func (s *PostgresSessionStore) UsesRedis() bool { return false }
 
 type Session struct {
 	Token string
 	Actor Actor
 }
 
-func (s *SessionStore) CreateUserSession(ctx context.Context, email string) (Session, error) {
+func (s *PostgresSessionStore) CreateUserSession(ctx context.Context, email string) (Session, error) {
 	token, tokenHash, err := newSessionToken()
 	if err != nil {
 		return Session{}, err
@@ -49,7 +51,7 @@ func (s *SessionStore) CreateUserSession(ctx context.Context, email string) (Ses
 	}, nil
 }
 
-func (s *SessionStore) ValidateToken(ctx context.Context, token string) (Actor, error) {
+func (s *PostgresSessionStore) ValidateToken(ctx context.Context, token string) (Actor, error) {
 	tokenHash := hashToken(token)
 
 	var actorType, actorID string
@@ -91,13 +93,13 @@ func (s *SessionStore) ValidateToken(ctx context.Context, token string) (Actor, 
 	return actor, nil
 }
 
-func (s *SessionStore) RevokeToken(ctx context.Context, token string) error {
+func (s *PostgresSessionStore) RevokeToken(ctx context.Context, token string) error {
 	tokenHash := hashToken(token)
 	_, err := s.db.Exec(ctx, `DELETE FROM auth_sessions WHERE token_hash = $1`, tokenHash)
 	return err
 }
 
-func (s *SessionStore) CleanupExpired(ctx context.Context) error {
+func (s *PostgresSessionStore) CleanupExpired(ctx context.Context) error {
 	now := time.Now().UTC()
 	_, err := s.db.Exec(ctx, `
 		DELETE FROM auth_sessions
